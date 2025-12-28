@@ -1,0 +1,150 @@
+# Lahella.fi Course Advertisement Configuration
+# Copy this file and fill in your course details
+
+[auth]
+# Get this from browser DevTools > Application > Cookies > hallinta.lahella.fi
+# Look for cookies like __session or similar auth cookies
+# Format: "cookie1=value1; cookie2=value2"
+cookies = ""
+
+# Your organization's group ID (visible in API requests)
+group_id = "7103010551"
+
+[course]
+# Activity type: "hobby" for hobbies/leisure activities
+type = "hobby"
+
+# Required locales for the listing
+required_locales = ["fi", "en"]
+
+[course.title]
+fi = "Taiji-kurssi Lauttasaaressa"
+en = "Tai chi course in Lauttasaari"
+
+[course.summary]
+# Short description shown in listings
+fi = "Taiji-peruskurssi: kehon ja mielen rentoutusta ja luonnollisen asennon oppimista Yang-tyylin liikesarjan kautta"
+en = "An elementary course in tai chi: relaxing the mind and body and finding a natural position through the Yang style form"
+
+[course.description]
+# Full description (can include multiple paragraphs separated by \n\n)
+fi = """Peruskurssit on tarkoitettu uusille vasta-alkajille sekä niille, joilla Yang-tyylin liikesarja on vielä kesken. Kursseilla keskitytään kehon ja mielen rentouttamiseen sekä hyvän ja luonnollisen asennon oppimiseen. Varusteiksi suositellaan pitkähihaista paitaa, väljiä housuja sekä ohutpohjaisia tossuja.
+
+Liikkeet tehdään rauhallisesti ja niitä voidaan mukauttaa kunnon tai omien liikerajoitusten mukaan. Liikkeet harjoittavat tasapainoa ja kehonhallintaa. Jalkoja voi vahvistaa tekemällä liikkeet matalammalla, ja jatkokursseilla opitaan myös nopeita liikesarjoja joilla saa hien pintaan.
+
+Taiji tunnetaan myös kirjoitusasuissa tai ji, taichi, tai chi, taijiquan ja tai chi chuan. Seuramme edustaa Tung-suvun perinnettä ja opettaa Yang-tyylin liikesarjaa."""
+
+en = """Our elementary courses are intended for newcomers and those who have not yet learned the complete Yang-style long form. Participants learn to relax their body and mind and to find a good, natural posture. We recommend a long-sleeved shirt, loose pants and thin-soled slippers.
+
+The forms are performed slowly and can be adapted to each participant's conditioning and any movement limitations. Regular practice should improve your balance and body control. You can get a challenging lower-body workout by performing the form in a lower stance. In advanced courses we also do fast forms for a more strenuous workout.
+
+Tai chi can also be written as tai ji, taichichuan, taijiquan. Our association represents the Tung family tradition and teaches the Yang style form."""
+
+[course.categories]
+# Theme categories
+# Options: ht_hyvinvointi (wellness), ht_urheilu (sports), etc.
+themes = ["ht_hyvinvointi", "ht_urheilu"]
+
+# Activity format
+# Options: hm_harrastukset (hobbies), etc.
+formats = ["hm_harrastukset"]
+
+# Content language
+locales = ["fi-FI"]
+
+[course.demographics]
+# Target age groups
+# Options: ageGroup/range:0-6, ageGroup/range:7-12, ageGroup/range:13-17,
+#          ageGroup/range:18-29, ageGroup/range:30-64, ageGroup/range:65-99
+age_groups = ["ageGroup/range:18-29", "ageGroup/range:30-64", "ageGroup/range:65-99"]
+
+# Gender targeting
+# Options: gender/gender (all), gender/male, gender/female
+gender = ["gender/gender"]
+
+[location]
+# Location type: "place" for in-person, "online" for virtual
+type = "place"
+
+# Regions where the course is available
+# Format: city/FI/CityName or state/FI/StateName
+regions = ["city/FI/Helsinki", "city/FI/Espoo", "city/FI/Vantaa"]
+
+[location.address]
+street = "Myllykalliontie 3"
+postal_code = "00200"
+city = "Helsinki"
+state = "Uusimaa"
+country = "FI"
+
+# Map coordinates [longitude, latitude]
+coordinates = [24.87076, 60.16061]
+zoom = 16
+
+[location.summary]
+# Location-specific description
+fi = "Kurssi järjestetään Lauttasaaren ala-asteella sunnuntaisin klo 11–12."
+en = "The course meets at Lauttasaari primary school on Sundays from 11am to noon."
+
+# Accessibility options
+# Options: ac_unknow (unknown), ac_accessible (accessible), ac_not_accessible
+accessibility = ["ac_unknow"]
+
+[schedule]
+# Start and end dates (YYYY-MM-DD format)
+start_date = "2026-01-11"
+end_date = "2026-05-24"
+
+# Timezone
+timezone = "Europe/Helsinki"
+
+# Weekly schedule
+# weekday: 1=Monday, 2=Tuesday, ..., 7=Sunday
+[[schedule.weekly]]
+weekday = 7
+start_time = "11:00"
+end_time = "12:00"
+
+[pricing]
+# Pricing type: "free", "paid", "donation"
+type = "paid"
+
+[pricing.info]
+fi = "195 euroa. Ensimmäisen kerran saa käydä kokeilemassa ilmaiseksi – ota yhteyttä opettajaan ja kysy lisätietoja."
+en = "€195. You can attend the first session for free – contact the teacher for instructions."
+
+[registration]
+# Is registration required?
+required = true
+
+# Registration URL
+url = "https://taichichuan.fi/kurssit/0d73bcf1-c22e-4c14-8d24-23a934a1fc90"
+
+# Registration email
+email = "esko.nuutila@taichichuan.fi"
+
+[registration.info]
+fi = "Kurssia vetää Esko Nuutila, ilmoittautumiset hänelle tai oheisen linkin kautta. Peruskursseilla seuran jäsenmaksu sisältyy kurssin hintaan."
+en = "The course is taught by Esko Nuutila. To enrol, contact the teacher or use the attached link. On elementary courses the price includes the association membership fee."
+
+[image]
+# Path to the image file
+path = "taijikuva.jpg"
+
+# Alt text for the image
+alt = "Oppilaita taiji-kurssilla"
+
+[contacts]
+# Contact information
+
+[[contacts.list]]
+type = "email"
+value = "esko.nuutila@taichichuan.fi"
+description_fi = "Lisätietoja"
+description_en = "Details"
+
+[[contacts.list]]
+type = "www"
+value = "https://taichichuan.fi/kurssit"
+description_fi = "Lisätietoja"
+description_en = "Details"
