@@ -23,10 +23,51 @@ import tomllib
 BASE_URL = "https://hallinta.lahella.fi"
 
 
+def merge_configs(base: dict, override: dict) -> dict:
+    """Deep merge two dictionaries, with override taking precedence.
+
+    - Arrays are concatenated (base + override)
+    - Dicts are recursively merged
+    - Other values are replaced
+    """
+    result = base.copy()
+    for key, value in override.items():
+        if key in result:
+            # Concatenate arrays
+            if isinstance(result[key], list) and isinstance(value, list):
+                result[key] = result[key] + value
+            # Recursively merge dictionaries
+            elif isinstance(result[key], dict) and isinstance(value, dict):
+                result[key] = merge_configs(result[key], value)
+            # Otherwise override
+            else:
+                result[key] = value
+        else:
+            result[key] = value
+    return result
+
+
 def load_config(config_path: Path) -> dict:
-    """Load TOML configuration file."""
+    """Load TOML configuration file with support for auth and defaults."""
     with open(config_path, "rb") as f:
-        return tomllib.load(f)
+        config = tomllib.load(f)
+
+    # Look for auth.toml in the same directory
+    auth_path = config_path.parent / "auth.toml"
+    if auth_path.exists():
+        with open(auth_path, "rb") as f:
+            auth_config = tomllib.load(f)
+            config = merge_configs(auth_config, config)
+
+    # Look for defaults.toml in the same directory
+    defaults_path = config_path.parent / "defaults.toml"
+    if defaults_path.exists():
+        with open(defaults_path, "rb") as f:
+            defaults_config = tomllib.load(f)
+            # Merge order: auth < defaults < course-specific
+            config = merge_configs(defaults_config, config)
+
+    return config
 
 
 def parse_cookies(cookie_string: str) -> dict:

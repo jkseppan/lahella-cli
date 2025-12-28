@@ -1,0 +1,12 @@
+# Authentication configuration
+# Copy this to auth.toml and fill in your credentials
+# DO NOT commit auth.toml to git!
+
+[auth]
+# Get this from browser DevTools > Application > Cookies > hallinta.lahella.fi
+# Look for AUTH_TOKEN_* cookie
+# Format: "cookie_name=cookie_value"
+cookies = "AUTH_TOKEN_DEADBEEF00_0=your_token_here"
+
+# Your organization's group ID (visible in API requests)
+group_id = "1234567890"

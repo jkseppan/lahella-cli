@@ -8,3 +8,9 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Auth credentials - never commit!
+auth.toml
+
+# OS
+.DS_Store
