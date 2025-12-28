@@ -119,18 +119,13 @@ def upload_image(session: httpx.Session, config: dict, image_path: Path) -> str:
     return result["_key"]
 
 
-def build_activity_payload(config: dict, photo_id: str | None) -> dict:
-    """Build the activity JSON payload from config."""
-    course = config["course"]
-    location = config["location"]
-    schedule = config["schedule"]
-    pricing = config["pricing"]
-    registration = config["registration"]
-    contacts = config.get("contacts", {})
-    image = config.get("image", {})
+def build_channel(channel_config: dict, registration: dict, defaults: dict) -> dict:
+    """Build a single channel from config."""
+    location = channel_config.get("location", {})
+    schedule = channel_config.get("schedule", {})
 
-    # Generate a channel ID
-    channel_id = str(uuid.uuid4())
+    # Merge with defaults
+    address = {**defaults.get("address", {}), **location.get("address", {})}
 
     # Build weekly schedule
     day_specific_times = []
@@ -149,59 +144,87 @@ def build_activity_payload(config: dict, photo_id: str | None) -> dict:
         "daySpecificTimes": day_specific_times,
     }
 
-    # Build channel (location/event info)
-    channel = {
-        "id": channel_id,
-        "type": [location["type"]],
+    return {
+        "id": str(uuid.uuid4()),
+        "type": [location.get("type", "place")],
         "events": [{
             "start": date_to_timestamp(schedule["start_date"]),
-            "timeZone": schedule["timezone"],
+            "timeZone": schedule.get("timezone", "Europe/Helsinki"),
             "type": "4",  # recurring event
             "recurrence": recurrence,
         }],
         "translations": {
             "fi": {
-                "summary": text_to_html(location["summary"]["fi"]),
+                "summary": text_to_html(location.get("summary", {}).get("fi", "")),
                 "address": {
-                    "street": location["address"]["street"],
-                    "postalCode": location["address"]["postal_code"],
-                    "city": location["address"]["city"],
-                    "state": location["address"]["state"],
-                    "country": location["address"]["country"],
+                    "street": address.get("street", ""),
+                    "postalCode": address.get("postal_code", ""),
+                    "city": address.get("city", "Helsinki"),
+                    "state": address.get("state", "Uusimaa"),
+                    "country": address.get("country", "FI"),
                 },
                 "registration": text_to_html(registration["info"]["fi"]),
             },
             "en": {
-                "summary": text_to_html(location["summary"]["en"]),
+                "summary": text_to_html(location.get("summary", {}).get("en", "")),
                 "address": {
-                    "postalCode": location["address"]["postal_code"],
-                    "city": location["address"]["city"],
-                    "state": location["address"]["state"],
-                    "country": location["address"]["country"],
+                    "postalCode": address.get("postal_code", ""),
+                    "city": address.get("city", "Helsinki"),
+                    "state": address.get("state", "Uusimaa"),
+                    "country": address.get("country", "FI"),
                 },
                 "registration": text_to_html(registration["info"]["en"]),
             },
             "sv": {
                 "address": {
-                    "postalCode": location["address"]["postal_code"],
-                    "city": location["address"]["city"],
-                    "state": "Nyland" if location["address"]["state"] == "Uusimaa" else location["address"]["state"],
-                    "country": location["address"]["country"],
+                    "postalCode": address.get("postal_code", ""),
+                    "city": address.get("city", "Helsinki"),
+                    "state": "Nyland" if address.get("state") == "Uusimaa" else address.get("state", "Uusimaa"),
+                    "country": address.get("country", "FI"),
                 },
             },
         },
         "map": {
             "center": {
                 "type": "Point",
-                "coordinates": location["address"]["coordinates"],
+                "coordinates": address.get("coordinates", [24.9, 60.2]),
             },
-            "zoom": location["address"]["zoom"],
+            "zoom": address.get("zoom", 16),
         },
         "accessibility": location.get("accessibility", ["ac_unknow"]),
         "registrationRequired": registration["required"],
         "registrationUrl": registration["url"],
         "registrationEmail": registration["email"],
     }
+
+
+def build_activity_payload(config: dict, photo_id: str | None) -> dict:
+    """Build the activity JSON payload from config."""
+    course = config["course"]
+    pricing = config["pricing"]
+    registration = config["registration"]
+    contacts = config.get("contacts", {})
+    image = config.get("image", {})
+
+    # Build channels - support both single location and multiple channels
+    channels = []
+    if "channels" in config:
+        # Multi-channel mode
+        defaults = {"address": config.get("location", {}).get("address", {})}
+        for ch_config in config["channels"]:
+            channels.append(build_channel(ch_config, registration, defaults))
+        # Collect regions from all channels
+        regions = config.get("location", {}).get("regions", ["city/FI/Helsinki"])
+    else:
+        # Single location mode (backwards compatible)
+        location = config["location"]
+        schedule = config["schedule"]
+        channels.append(build_channel(
+            {"location": location, "schedule": schedule},
+            registration,
+            {"address": location.get("address", {})}
+        ))
+        regions = location.get("regions", ["city/FI/Helsinki"])
 
     # Build contacts list
     contact_list = []
@@ -221,7 +244,7 @@ def build_activity_payload(config: dict, photo_id: str | None) -> dict:
     traits = {
         "type": course["type"],
         "requiredLocales": course["required_locales"],
-        "channels": [channel],
+        "channels": channels,
         "translations": {
             "fi": {
                 "name": course["title"]["fi"],
@@ -240,7 +263,7 @@ def build_activity_payload(config: dict, photo_id: str | None) -> dict:
         "demographic": course["demographics"]["age_groups"] + course["demographics"]["gender"],
         "format": course["categories"]["formats"],
         "locale": course["categories"]["locales"],
-        "region": location["regions"],
+        "region": regions,
         "pricing": [pricing["type"]],
         "contacts": contact_list,
     }
@@ -253,8 +276,6 @@ def build_activity_payload(config: dict, photo_id: str | None) -> dict:
     payload = {
         "group": config["auth"]["group_id"],
         "traits": traits,
-        "lockedAt": int(datetime.now().timestamp() * 1000),
-        "lockedBy": f"{config['auth']['group_id']}:{int(datetime.now().timestamp() * 1000)}",
     }
 
     return payload
@@ -304,13 +325,32 @@ def main():
         sys.exit(1)
 
     # Create session with cookies
-    session = httpx.Client()
+    session = httpx.Client(timeout=60.0)  # 60s timeout for image uploads
     session.cookies.update(parse_cookies(config["auth"]["cookies"]))
     session.headers.update({
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
         "Origin": BASE_URL,
         "Referer": f"{BASE_URL}/activities?_key=new&type=hobby",
     })
+
+    # Test authentication
+    if args.dry_run:
+        print("Testing authentication...")
+        test_url = f"{BASE_URL}/v1/activities"
+        try:
+            response = session.get(test_url, params={"group": config["auth"]["group_id"], "limit": 1})
+            if response.status_code == 200:
+                print("✓ Authentication successful!\n")
+            elif response.status_code == 401:
+                print("✗ Authentication failed - invalid or expired cookies")
+                sys.exit(1)
+            else:
+                print(f"✗ Unexpected response: {response.status_code}")
+                print(response.text)
+                sys.exit(1)
+        except Exception as e:
+            print(f"✗ Error testing auth: {e}")
+            sys.exit(1)
 
     # Upload image if configured
     photo_id = None
