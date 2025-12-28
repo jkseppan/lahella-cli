@@ -250,13 +250,11 @@ def build_activity_payload(config: dict, photo_id: str | None) -> dict:
                 "name": course["title"]["fi"],
                 "summary": text_to_html(course["summary"]["fi"]),
                 "description": text_to_html(course["description"]["fi"]),
-                "pricing": text_to_html(pricing["info"]["fi"]),
             },
             "en": {
                 "name": course["title"]["en"],
                 "summary": text_to_html(course["summary"]["en"]),
                 "description": text_to_html(course["description"]["en"]),
-                "pricing": text_to_html(pricing["info"]["en"]),
             },
         },
         "theme": course["categories"]["themes"],
@@ -267,6 +265,10 @@ def build_activity_payload(config: dict, photo_id: str | None) -> dict:
         "pricing": [pricing["type"]],
         "contacts": contact_list,
     }
+
+    if 'info' in pricing:
+        for lang,info in pricing['info'].items():
+            traits['translations'][lang]['pricing'] = text_to_html(info)
 
     if photo_id:
         traits["photo"] = photo_id
