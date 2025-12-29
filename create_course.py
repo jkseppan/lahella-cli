@@ -16,8 +16,9 @@ from datetime import datetime
 from pathlib import Path
 
 import httpx
-
 import tomllib
+
+from auth_helper import get_authenticated_session
 
 
 BASE_URL = "https://hallinta.lahella.fi"
@@ -70,16 +71,6 @@ def load_config(config_path: Path) -> dict:
     return config
 
 
-def parse_cookies(cookie_string: str) -> dict:
-    """Parse cookie string into dict."""
-    cookies = {}
-    if cookie_string:
-        for item in cookie_string.split(";"):
-            item = item.strip()
-            if "=" in item:
-                key, value = item.split("=", 1)
-                cookies[key.strip()] = value.strip()
-    return cookies
 
 
 def text_to_html(text: str) -> str:
@@ -320,39 +311,15 @@ def main():
 
     config = load_config(args.config)
 
-    # Validate auth
-    if not config.get("auth", {}).get("cookies"):
-        print("Error: No auth cookies configured.")
-        print("Please log in via browser and copy cookies to the config file.")
-        sys.exit(1)
-
-    # Create session with cookies
-    session = httpx.Client(timeout=60.0)  # 60s timeout for image uploads
-    session.cookies.update(parse_cookies(config["auth"]["cookies"]))
+    # Get authenticated session (will auto-refresh token if needed)
+    session = get_authenticated_session(auto_refresh=True)
     session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        "Origin": BASE_URL,
         "Referer": f"{BASE_URL}/activities?_key=new&type=hobby",
     })
 
-    # Test authentication
+    # Test authentication in dry-run mode
     if args.dry_run:
-        print("Testing authentication...")
-        test_url = f"{BASE_URL}/v1/activities"
-        try:
-            response = session.get(test_url, params={"group": config["auth"]["group_id"], "limit": 1})
-            if response.status_code == 200:
-                print("✓ Authentication successful!\n")
-            elif response.status_code == 401:
-                print("✗ Authentication failed - invalid or expired cookies")
-                sys.exit(1)
-            else:
-                print(f"✗ Unexpected response: {response.status_code}")
-                print(response.text)
-                sys.exit(1)
-        except Exception as e:
-            print(f"✗ Error testing auth: {e}")
-            sys.exit(1)
+        print("✓ Authentication successful!\n")
 
     # Upload image if configured
     photo_id = None

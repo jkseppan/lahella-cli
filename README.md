@@ -6,11 +6,15 @@ Automate creating course listings on lahella.fi using their API.
 
 ```bash
 # Install dependencies
-uv pip install httpx
+uv sync
+uv run playwright install chromium
 
 # Create auth.toml from example
 cp auth.toml.example auth.toml
-# Edit auth.toml with your cookie from browser DevTools
+# Edit auth.toml with your email and password
+
+# Run login to get fresh cookies
+uv run login.py
 ```
 
 ## Configuration Structure
@@ -23,26 +27,42 @@ The script uses a layered configuration system:
 
 Settings are merged with this precedence: **course file > defaults.toml > auth.toml**
 
-### Getting Your Auth Cookie
+### Authentication
 
-1. Open https://hallinta.lahella.fi in your browser
-2. Log in
-3. Open DevTools (F12) → Application → Cookies → hallinta.lahella.fi
-4. Copy the `AUTH_TOKEN_*` cookie value
-5. Put it in `auth.toml`
+The automation uses automated login via `login.py`:
+
+1. Add your credentials to `auth.toml`:
+   ```toml
+   [auth]
+   email = "your@email.com"
+   password = "yourpassword"
+   group_id = "your_group_id"
+   ```
+
+2. Run `uv run login.py` to authenticate and extract cookies
+
+The script will automatically:
+- Log in to hallinta.lahella.fi
+- Extract auth tokens
+- Save them to `auth.toml`
+
+The `create_course.py` script has automatic token refresh built-in. If your auth token expires but the refresh token is still valid, it will automatically refresh without requiring a new login.
 
 ## Usage
 
 ```bash
+# First, log in to get fresh cookies (only needed once or when cookies expire)
+uv run login.py
+
 # Preview what would be sent (dry run)
-python create_course.py taiji-lauttasaari.toml --dry-run
+uv run create_course.py taiji-lauttasaari.toml --dry-run
 
 # Actually create the listing
-python create_course.py taiji-lauttasaari.toml
+uv run create_course.py taiji-lauttasaari.toml
 
-# Create multiple courses
-python create_course.py taiji-lauttasaari.toml
-python create_course.py taiji-kallio.toml
+# Create multiple courses (token auto-refreshes if needed)
+uv run create_course.py taiji-lauttasaari.toml
+uv run create_course.py taiji-kallio.toml
 ```
 
 ## File Structure
@@ -55,7 +75,9 @@ python create_course.py taiji-kallio.toml
 ├── taiji-lauttasaari.toml # Course-specific config
 ├── taiji-kallio.toml      # Another course config
 ├── taijikuva.jpg          # Course image
-└── create_course.py       # The automation script
+├── login.py               # Automated login script
+├── auth_helper.py         # Shared auth/token refresh module
+└── create_course.py       # Course creation script
 ```
 
 ## Creating a New Course
@@ -68,7 +90,7 @@ python create_course.py taiji-kallio.toml
    - `location.summary`
    - `schedule.start_date`, `end_date`, `weekly`
    - `registration.url`
-3. Run: `python create_course.py your-course.toml`
+3. Run: `uv run create_course.py your-course.toml`
 
 Most settings (categories, demographics, contacts) are inherited from `defaults.toml`, so you only need to specify what's different.
 
