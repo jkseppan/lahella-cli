@@ -11,7 +11,6 @@ Usage:
 
 import argparse
 import json
-import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -21,6 +20,7 @@ from ruamel.yaml.comments import CommentedMap, CommentedSeq, merge_attrib
 from ruamel.yaml.mergevalue import MergeValue
 
 from auth_helper import get_authenticated_session, load_auth_config, BASE_URL
+from field_mapping import Transformer, normalize_text, html_texts_equal
 
 
 COURSES_FILE = Path(__file__).parent / "courses.yaml"
@@ -51,7 +51,7 @@ class TemplateMatcher:
 
     def _extract_templates(self, defaults: dict) -> None:
         """Extract templates we can match against."""
-        # Course defaults (type, required_locales, categories, demographics)
+        # Course defaults
         if "course" in defaults:
             self.anchors["course_defaults"] = defaults["course"]
 
@@ -70,19 +70,24 @@ class TemplateMatcher:
             if "free" in defaults["pricing"]:
                 self.anchors["pricing_free"] = defaults["pricing"]["free"]
 
-        # Text blocks - store normalized versions for fuzzy matching
+        # Text blocks
         if "text" in defaults:
             text = defaults["text"]
-            if "course_summary" in text:
-                self.anchors["summary_kurssi"] = text["course_summary"]
-            if "course_description" in text:
-                self.anchors["description_kurssi"] = text["course_description"]
-            if "harjoitus_summary" in text:
-                self.anchors["summary_harjoitus"] = text["harjoitus_summary"]
-            if "harjoitus_description" in text:
-                self.anchors["description_harjoitus"] = text["harjoitus_description"]
-            if "ulko_description" in text:
-                self.anchors["description_ulko"] = text["ulko_description"]
+            for key in ["course_summary", "course_description", "harjoitus_summary",
+                        "harjoitus_description", "ulko_description"]:
+                if key in text:
+                    # Map to anchor names
+                    anchor_name = key.replace("course_", "").replace("harjoitus_", "harjoitus_").replace("ulko_", "ulko_")
+                    if key == "course_summary":
+                        self.anchors["summary_kurssi"] = text[key]
+                    elif key == "course_description":
+                        self.anchors["description_kurssi"] = text[key]
+                    elif key == "harjoitus_summary":
+                        self.anchors["summary_harjoitus"] = text[key]
+                    elif key == "harjoitus_description":
+                        self.anchors["description_harjoitus"] = text[key]
+                    elif key == "ulko_description":
+                        self.anchors["description_ulko"] = text[key]
 
         # Registration
         if "registration" in defaults:
@@ -96,42 +101,42 @@ class TemplateMatcher:
             if "harjoitus" in defaults["contacts"]:
                 self.anchors["contacts_harjoitus"] = defaults["contacts"]["harjoitus"]
 
-    def _normalize_text(self, text: str) -> str:
-        """Normalize text for comparison (strip whitespace, lowercase)."""
-        if not text:
-            return ""
-        # Remove extra whitespace, normalize
-        return " ".join(text.lower().split())
-
     def _texts_match(self, text1: str | dict, text2: str | dict) -> bool:
-        """Check if two text values match (fuzzy for strings)."""
+        """
+        Check if two text values match semantically.
+
+        For HTML strings, compares the extracted text content, ignoring
+        HTML structure differences (tag attributes, whitespace between tags).
+        For dicts (translations), compares each language key.
+        """
         if isinstance(text1, dict) and isinstance(text2, dict):
-            # Compare each language
             for lang in set(text1.keys()) | set(text2.keys()):
                 if not self._texts_match(text1.get(lang, ""), text2.get(lang, "")):
                     return False
             return True
         elif isinstance(text1, str) and isinstance(text2, str):
-            return self._normalize_text(text1) == self._normalize_text(text2)
+            # Use semantic HTML comparison for HTML content
+            if "<" in text1 or "<" in text2:
+                return html_texts_equal(text1, text2)
+            # Fall back to plain text comparison
+            return normalize_text(text1) == normalize_text(text2)
         return False
 
     def _values_match(self, val1, val2) -> bool:
-        """Check if two values match (deep comparison)."""
-        # Allow dict vs CommentedMap comparison
+        """Check if two values match (deep comparison with set equality for lists)."""
         if isinstance(val1, dict) and isinstance(val2, dict):
             if set(val1.keys()) != set(val2.keys()):
                 return False
             return all(self._values_match(val1[k], val2[k]) for k in val1)
-        # Allow list vs CommentedSeq comparison
         if isinstance(val1, (list, CommentedSeq)) and isinstance(val2, (list, CommentedSeq)):
+            # Use set equality for order-independent comparison
             if len(val1) != len(val2):
                 return False
-            return all(self._values_match(a, b) for a, b in zip(val1, val2))
+            return set(val1) == set(val2)
         return val1 == val2
 
     def find_matching_anchor(self, field: str, value) -> str | None:
         """Find an anchor that matches the given value for a field."""
-        # Map field names to relevant anchors
         field_anchors = {
             "summary": ["summary_kurssi", "summary_harjoitus"],
             "description": ["description_kurssi", "description_harjoitus", "description_ulko"],
@@ -140,21 +145,17 @@ class TemplateMatcher:
             "contacts": ["contacts_www", "contacts_harjoitus"],
         }
 
-        candidates = field_anchors.get(field, [])
-
-        for anchor_name in candidates:
+        for anchor_name in field_anchors.get(field, []):
             if anchor_name not in self.anchors:
                 continue
             anchor_val = self.anchors[anchor_name]
 
-            # For text fields, use fuzzy matching
             if field in ("summary", "description"):
                 if self._texts_match(value, anchor_val):
                     return anchor_name
             else:
                 if self._values_match(value, anchor_val):
                     return anchor_name
-
         return None
 
     def matches_course_defaults(self, course: dict) -> bool:
@@ -163,47 +164,29 @@ class TemplateMatcher:
             return False
         defaults = self.anchors["course_defaults"]
 
-        # Check key fields
-        checks = [
+        return all([
             course.get("type") == defaults.get("type"),
-            self._values_match(
-                course.get("required_locales", []),
-                defaults.get("required_locales", [])
-            ),
-            self._values_match(
-                course.get("categories", {}),
-                defaults.get("categories", {})
-            ),
-            self._values_match(
-                course.get("demographics", {}),
-                defaults.get("demographics", {})
-            ),
-        ]
-        return all(checks)
+            self._values_match(course.get("required_locales", []), defaults.get("required_locales", [])),
+            self._values_match(course.get("categories", {}), defaults.get("categories", {})),
+            self._values_match(course.get("demographics", {}), defaults.get("demographics", {})),
+        ])
 
     def matches_location_defaults(self, location: dict) -> bool:
         """Check if location matches location_defaults."""
         if "location_defaults" not in self.anchors:
             return False
         defaults = self.anchors["location_defaults"]
-
-        # Check non-varying fields
         address = location.get("address", {})
         def_address = defaults.get("address", {})
 
-        # Compare regions as sets (order doesn't matter)
-        loc_regions = set(location.get("regions", []))
-        def_regions = set(defaults.get("regions", []))
-
-        checks = [
+        return all([
             location.get("type") == defaults.get("type"),
-            loc_regions == def_regions,  # Order-independent comparison
+            set(location.get("regions", [])) == set(defaults.get("regions", [])),
             self._values_match(location.get("accessibility", []), defaults.get("accessibility", [])),
             address.get("city") == def_address.get("city"),
             address.get("state") == def_address.get("state"),
             address.get("country") == def_address.get("country"),
-        ]
-        return all(checks)
+        ])
 
 
 def fetch_activities(session, group_id: str, limit: int = 100, skip: int = 0) -> dict:
@@ -253,259 +236,10 @@ def fetch_activity_by_id(session, activity_id: str) -> dict:
     return response.json()
 
 
-def timestamp_to_date(ts: int | None) -> str:
-    """Convert milliseconds timestamp to YYYY-MM-DD."""
-    if ts is None or ts == 0:
-        return ""
-    return datetime.fromtimestamp(ts / 1000).strftime("%Y-%m-%d")
-
-
-def html_to_text(html: str | None) -> str:
-    """Strip basic HTML tags to get plain text."""
-    if not html:
-        return ""
-    import re
-    # Remove HTML tags but keep content
-    text = re.sub(r'<[^>]+>', '', html)
-    # Clean up whitespace
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
-
-
 def convert_activity_to_yaml_schema(activity: dict) -> dict:
-    """Convert API activity response to our YAML schema format."""
-    traits = activity.get("traits", {})
-    translations = traits.get("translations", {})
-    channels = traits.get("channels", [])
-
-    # Build course dict matching courses.yaml schema
-    course = {
-        "_key": activity.get("_key"),  # Server ID for sync
-        "_status": activity.get("status"),
-        "title": {},
-        "type": traits.get("type", "hobby"),
-        "required_locales": traits.get("requiredLocales", ["fi", "en"]),
-    }
-
-    # Translations for title, summary, description
-    for lang, trans in translations.items():
-        if "name" in trans and trans["name"]:
-            if "title" not in course:
-                course["title"] = {}
-            course["title"][lang] = trans["name"]
-        if "summary" in trans and trans["summary"]:
-            if "summary" not in course:
-                course["summary"] = {}
-            course["summary"][lang] = html_to_text(trans["summary"])
-        if "description" in trans and trans["description"]:
-            if "description" not in course:
-                course["description"] = {}
-            course["description"][lang] = html_to_text(trans["description"])
-        if "pricing" in trans and trans["pricing"]:
-            if "pricing" not in course:
-                course["pricing"] = {"info": {}}
-            if "info" not in course["pricing"]:
-                course["pricing"]["info"] = {}
-            course["pricing"]["info"][lang] = html_to_text(trans["pricing"])
-
-    # Categories
-    course["categories"] = {
-        "themes": list(traits.get("theme", [])),
-        "formats": list(traits.get("format", [])),
-        "locales": list(traits.get("locale", [])),
-    }
-
-    # Demographics
-    age_groups = []
-    gender = []
-    for demo in traits.get("demographic", []):
-        if demo.startswith("ageGroup/"):
-            age_groups.append(demo)
-        elif demo.startswith("gender/"):
-            gender.append(demo)
-    course["demographics"] = {
-        "age_groups": age_groups,
-        "gender": gender,
-    }
-
-    # Pricing type
-    pricing_types = traits.get("pricing", ["paid"])
-    if "pricing" not in course:
-        course["pricing"] = {}
-    course["pricing"]["type"] = pricing_types[0] if pricing_types else "paid"
-
-    # Regions (from traits, not channel)
-    course["location"] = {
-        "regions": list(traits.get("region", [])),
-    }
-
-    # Contacts
-    contacts_list = []
-    for contact in traits.get("contacts", []):
-        contact_entry = {
-            "type": contact.get("type"),
-            "value": contact.get("value"),
-        }
-        trans = contact.get("translations", {})
-        if trans:
-            desc = {}
-            for lang, t in trans.items():
-                if t.get("description"):
-                    desc[lang] = t["description"]
-            if desc:
-                contact_entry["description"] = desc
-        contacts_list.append(contact_entry)
-    if contacts_list:
-        course["contacts"] = {"list": contacts_list}
-
-    # Image
-    if traits.get("photo"):
-        course["image"] = {
-            "id": traits["photo"],
-            "alt": traits.get("photoAlt", ""),
-        }
-
-    # Channels
-    if len(channels) == 1:
-        # Single location mode
-        ch = channels[0]
-        ch_trans = ch.get("translations", {})
-        fi_trans = ch_trans.get("fi", {})
-        en_trans = ch_trans.get("en", {})
-        address = fi_trans.get("address", {})
-
-        course["location"].update({
-            "type": ch.get("type", ["place"])[0] if ch.get("type") else "place",
-            "accessibility": list(ch.get("accessibility", ["ac_unknow"])),
-            "address": {
-                "street": address.get("street", ""),
-                "postal_code": address.get("postalCode", ""),
-                "city": address.get("city", "Helsinki"),
-                "state": address.get("state", "Uusimaa"),
-                "country": address.get("country", "FI"),
-            },
-            "summary": {},
-        })
-
-        # Coordinates from map
-        map_data = ch.get("map", {})
-        center = map_data.get("center", {})
-        if center.get("coordinates"):
-            course["location"]["address"]["coordinates"] = center["coordinates"]
-            course["location"]["address"]["zoom"] = map_data.get("zoom", 16)
-
-        # Location summary
-        if fi_trans.get("summary"):
-            course["location"]["summary"]["fi"] = html_to_text(fi_trans["summary"])
-        if en_trans.get("summary"):
-            course["location"]["summary"]["en"] = html_to_text(en_trans["summary"])
-
-        # Registration info from channel
-        course["registration"] = {
-            "required": ch.get("registrationRequired", False),
-            "url": ch.get("registrationUrl") or "",
-            "email": ch.get("registrationEmail") or "",
-            "info": {},
-        }
-        if fi_trans.get("registration"):
-            course["registration"]["info"]["fi"] = html_to_text(fi_trans["registration"])
-        if en_trans.get("registration"):
-            course["registration"]["info"]["en"] = html_to_text(en_trans["registration"])
-
-        # Schedule from events
-        events = ch.get("events", [])
-        if events:
-            event = events[0]
-            recurrence = event.get("recurrence", {})
-            day_times = recurrence.get("daySpecificTimes", [])
-
-            course["schedule"] = {
-                "timezone": event.get("timeZone", "Europe/Helsinki"),
-                "start_date": timestamp_to_date(event.get("start", 0)),
-                "end_date": timestamp_to_date(recurrence.get("end", 0)),
-                "weekly": [],
-            }
-
-            for dt in day_times:
-                course["schedule"]["weekly"].append({
-                    "weekday": dt.get("weekday"),
-                    "start_time": dt.get("startTime"),
-                    "end_time": dt.get("endTime"),
-                })
-    else:
-        # Multi-channel mode
-        course["channels"] = []
-        for ch in channels:
-            ch_trans = ch.get("translations", {})
-            fi_trans = ch_trans.get("fi", {})
-            en_trans = ch_trans.get("en", {})
-            address = fi_trans.get("address", {})
-
-            channel_data = {
-                "location": {
-                    "type": ch.get("type", ["place"])[0] if ch.get("type") else "place",
-                    "accessibility": list(ch.get("accessibility", ["ac_unknow"])),
-                    "address": {
-                        "street": address.get("street", ""),
-                        "postal_code": address.get("postalCode", ""),
-                        "city": address.get("city", "Helsinki"),
-                        "state": address.get("state", "Uusimaa"),
-                        "country": address.get("country", "FI"),
-                    },
-                    "summary": {},
-                },
-            }
-
-            # Coordinates
-            map_data = ch.get("map", {})
-            center = map_data.get("center", {})
-            if center.get("coordinates"):
-                channel_data["location"]["address"]["coordinates"] = center["coordinates"]
-                channel_data["location"]["address"]["zoom"] = map_data.get("zoom", 16)
-
-            # Location summary
-            if fi_trans.get("summary"):
-                channel_data["location"]["summary"]["fi"] = html_to_text(fi_trans["summary"])
-            if en_trans.get("summary"):
-                channel_data["location"]["summary"]["en"] = html_to_text(en_trans["summary"])
-
-            # Schedule
-            events = ch.get("events", [])
-            if events:
-                event = events[0]
-                recurrence = event.get("recurrence", {})
-                day_times = recurrence.get("daySpecificTimes", [])
-
-                channel_data["schedule"] = {
-                    "timezone": event.get("timeZone", "Europe/Helsinki"),
-                    "start_date": timestamp_to_date(event.get("start", 0)),
-                    "end_date": timestamp_to_date(recurrence.get("end", 0)),
-                    "weekly": [],
-                }
-
-                for dt in day_times:
-                    channel_data["schedule"]["weekly"].append({
-                        "weekday": dt.get("weekday"),
-                        "start_time": dt.get("startTime"),
-                        "end_time": dt.get("endTime"),
-                    })
-
-            course["channels"].append(channel_data)
-
-        # Registration from first channel for multi-channel
-        if channels:
-            ch = channels[0]
-            ch_trans = ch.get("translations", {}).get("fi", {})
-            course["registration"] = {
-                "required": ch.get("registrationRequired", False),
-                "url": ch.get("registrationUrl") or "",
-                "email": ch.get("registrationEmail") or "",
-                "info": {},
-            }
-            if ch_trans.get("registration"):
-                course["registration"]["info"]["fi"] = html_to_text(ch_trans["registration"])
-
-    return course
+    """Convert API activity response to our YAML schema format using Transformer."""
+    transformer = Transformer()
+    return transformer.api_to_yaml(activity)
 
 
 def get_activity_status(activity: dict) -> str:

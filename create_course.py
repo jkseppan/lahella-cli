@@ -11,14 +11,13 @@ The user must be logged in via browser and provide auth cookies in auth.yaml.
 import argparse
 import json
 import sys
-import uuid
-from datetime import datetime
 from pathlib import Path
 
 import httpx
 from ruamel.yaml import YAML
 
 from auth_helper import get_authenticated_session, load_auth_config
+from field_mapping import Transformer
 
 
 BASE_URL = "https://hallinta.lahella.fi"
@@ -64,26 +63,6 @@ def list_courses(config: dict) -> None:
         print(f"  {i}. {title}")
 
 
-
-
-def text_to_html(text: str) -> str:
-    """Convert plain text to HTML paragraphs."""
-    paragraphs = text.strip().split("\n\n")
-    html_parts = []
-    for p in paragraphs:
-        # Replace single newlines with spaces within paragraphs
-        p = p.replace("\n", " ").strip()
-        if p:
-            html_parts.append(f'<p dir="ltr">{p}</p>')
-    return "".join(html_parts)
-
-
-def date_to_timestamp(date_str: str) -> int:
-    """Convert YYYY-MM-DD to milliseconds timestamp."""
-    dt = datetime.strptime(date_str, "%Y-%m-%d")
-    return int(dt.timestamp() * 1000)
-
-
 def upload_image_for_course(session: httpx.Client, auth: dict, image_path: Path) -> str:
     """Upload an image and return the file ID."""
     group_id = auth["group_id"]
@@ -103,166 +82,15 @@ def upload_image_for_course(session: httpx.Client, auth: dict, image_path: Path)
     return result["_key"]
 
 
-def build_channel(channel_config: dict, registration: dict) -> dict:
-    """Build a single channel from config (defaults already merged via YAML anchors)."""
-    location = channel_config.get("location", {})
-    schedule = channel_config.get("schedule", {})
-    address = location.get("address", {})
-
-    # Build weekly schedule
-    day_specific_times = []
-    for weekly in schedule.get("weekly", []):
-        day_specific_times.append({
-            "weekday": weekly["weekday"],
-            "startTime": weekly["start_time"],
-            "endTime": weekly["end_time"],
-        })
-
-    # Build recurrence
-    recurrence = {
-        "period": "P1W",
-        "exclude": [],
-        "end": date_to_timestamp(schedule["end_date"]),
-        "daySpecificTimes": day_specific_times,
-    }
-
-    return {
-        "id": str(uuid.uuid4()),
-        "type": [location.get("type", "place")],
-        "events": [{
-            "start": date_to_timestamp(schedule["start_date"]),
-            "timeZone": schedule.get("timezone", "Europe/Helsinki"),
-            "type": "4",  # recurring event
-            "recurrence": recurrence,
-        }],
-        "translations": {
-            "fi": {
-                "summary": text_to_html(location.get("summary", {}).get("fi", "")),
-                "address": {
-                    "street": address.get("street", ""),
-                    "postalCode": address.get("postal_code", ""),
-                    "city": address.get("city", "Helsinki"),
-                    "state": address.get("state", "Uusimaa"),
-                    "country": address.get("country", "FI"),
-                },
-                "registration": text_to_html(registration["info"]["fi"]),
-            },
-            "en": {
-                "summary": text_to_html(location.get("summary", {}).get("en", "")),
-                "address": {
-                    "postalCode": address.get("postal_code", ""),
-                    "city": address.get("city", "Helsinki"),
-                    "state": address.get("state", "Uusimaa"),
-                    "country": address.get("country", "FI"),
-                },
-                "registration": text_to_html(registration["info"]["en"]),
-            },
-            "sv": {
-                "address": {
-                    "postalCode": address.get("postal_code", ""),
-                    "city": address.get("city", "Helsinki"),
-                    "state": "Nyland" if address.get("state") == "Uusimaa" else address.get("state", "Uusimaa"),
-                    "country": address.get("country", "FI"),
-                },
-            },
-        },
-        "map": {
-            "center": {
-                "type": "Point",
-                "coordinates": list(address.get("coordinates", [24.9, 60.2])),
-            },
-            "zoom": address.get("zoom", 16),
-        },
-        "accessibility": list(location.get("accessibility", ["ac_unknow"])),
-        "registrationRequired": registration.get("required", True),
-        "registrationUrl": registration.get("url", ""),
-        "registrationEmail": registration.get("email", ""),
-    }
-
-
 def build_activity_payload(course: dict, auth: dict, photo_id: str | None) -> dict:
-    """Build the activity JSON payload from course data."""
-    pricing = course.get("pricing", {})
-    registration = course.get("registration", {})
-    contacts = course.get("contacts", {})
-    image = course.get("image", {})
+    """Build the activity JSON payload from course data using Transformer."""
+    transformer = Transformer()
+    payload = transformer.yaml_to_api(course, group_id=auth["group_id"])
 
-    # Build channels - support both single location and multiple channels
-    channels = []
-    if "channels" in course:
-        # Multi-channel mode
-        for ch_config in course["channels"]:
-            channels.append(build_channel(ch_config, registration))
-        # Use regions from course or default
-        regions = list(course.get("location", {}).get("regions", ["city/FI/Helsinki"]))
-    else:
-        # Single location mode
-        location = course.get("location", {})
-        schedule = course.get("schedule", {})
-        channels.append(build_channel(
-            {"location": location, "schedule": schedule},
-            registration
-        ))
-        regions = list(location.get("regions", ["city/FI/Helsinki"]))
-
-    # Build contacts list
-    contact_list = []
-    for contact in contacts.get("list", []):
-        desc = contact.get("description", {})
-        contact_list.append({
-            "type": contact["type"],
-            "value": contact["value"],
-            "id": str(uuid.uuid4()),
-            "translations": {
-                "fi": {"description": desc.get("fi", "Lisätietoja")},
-                "en": {"description": desc.get("en", "Details")},
-                "sv": {"description": "Detaljer"},
-            },
-        })
-
-    # Build main traits
-    categories = course.get("categories", {})
-    demographics = course.get("demographics", {})
-
-    traits = {
-        "type": course.get("type", "hobby"),
-        "requiredLocales": list(course.get("required_locales", ["fi", "en"])),
-        "channels": channels,
-        "translations": {
-            "fi": {
-                "name": course["title"]["fi"],
-                "summary": text_to_html(course.get("summary", {}).get("fi", "")),
-                "description": text_to_html(course.get("description", {}).get("fi", "")),
-            },
-            "en": {
-                "name": course["title"].get("en", course["title"]["fi"]),
-                "summary": text_to_html(course.get("summary", {}).get("en", "")),
-                "description": text_to_html(course.get("description", {}).get("en", "")),
-            },
-        },
-        "theme": list(categories.get("themes", [])),
-        "demographic": list(demographics.get("age_groups", [])) + list(demographics.get("gender", [])),
-        "format": list(categories.get("formats", [])),
-        "locale": list(categories.get("locales", [])),
-        "region": regions,
-        "pricing": [pricing.get("type", "paid")],
-        "contacts": contact_list,
-    }
-
-    if "info" in pricing:
-        for lang, info in pricing["info"].items():
-            if lang in traits["translations"]:
-                traits["translations"][lang]["pricing"] = text_to_html(info)
-
+    # Add photo if uploaded
     if photo_id:
-        traits["photo"] = photo_id
-        traits["photoAlt"] = image.get("alt", "")
-
-    # Build full payload
-    payload = {
-        "group": auth["group_id"],
-        "traits": traits,
-    }
+        payload["traits"]["photo"] = photo_id
+        payload["traits"]["photoAlt"] = course.get("image", {}).get("alt", "")
 
     return payload
 
