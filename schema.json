@@ -1,109 +1,179 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://lahella.fi/courses-schema.json",
-  "title": "Lähellä.fi Courses Configuration",
-  "description": "Schema for managing courses on lahella.fi",
+  "$id": "https://jks.iki.fi/schemas/lahella-courses.json",
+  "title": "Lähellä.fi Hobbies Configuration",
+  "description": "Reverse engineered schema for managing hobbies on lahella.fi",
   "type": "object",
-  "required": ["auth", "courses"],
+  "required": [
+    "courses"
+  ],
   "properties": {
-    "auth": {
-      "type": "object",
-      "description": "Authentication credentials",
-      "required": ["email", "password", "group_id"],
-      "properties": {
-        "email": {
-          "type": "string",
-          "format": "email",
-          "description": "Login email address"
-        },
-        "password": {
-          "type": "string",
-          "description": "Login password"
-        },
-        "cookies": {
-          "type": "string",
-          "description": "Session cookies (auto-updated by login script)"
-        },
-        "group_id": {
-          "type": "string",
-          "description": "Organization group ID on lahella.fi"
-        }
-      }
-    },
     "defaults": {
       "type": "object",
       "description": "Shared default values (use as YAML anchors)",
       "properties": {
-        "course": { "$ref": "#/$defs/courseDefaults" },
-        "location": { "$ref": "#/$defs/locationDefaults" },
-        "schedule": { "$ref": "#/$defs/scheduleDefaults" },
-        "pricing": { "$ref": "#/$defs/pricing" },
-        "registration": { "$ref": "#/$defs/registrationDefaults" },
-        "image": { "$ref": "#/$defs/image" },
-        "contacts": { "$ref": "#/$defs/contacts" }
+        "course": {
+          "$ref": "#/$defs/courseDefaults"
+        },
+        "location": {
+          "$ref": "#/$defs/locationDefaults"
+        },
+        "schedule": {
+          "$ref": "#/$defs/scheduleDefaults"
+        },
+        "pricing": {
+          "$ref": "#/$defs/pricing"
+        },
+        "registration": {
+          "$ref": "#/$defs/registrationDefaults"
+        },
+        "image": {
+          "$ref": "#/$defs/image"
+        },
+        "contacts": {
+          "$ref": "#/$defs/contacts"
+        }
       }
     },
     "courses": {
       "type": "array",
       "description": "List of course definitions",
-      "items": { "$ref": "#/$defs/course" }
+      "items": {
+        "$ref": "#/$defs/course"
+      }
     }
   },
   "$defs": {
     "localizedText": {
       "type": "object",
+      "description": "Localized text. Values can be plain text or HTML (see richTextHtml for supported tags)",
       "properties": {
-        "fi": { "type": "string" },
-        "en": { "type": "string" },
-        "sv": { "type": "string" }
+        "fi": {
+          "type": "string"
+        },
+        "en": {
+          "type": "string"
+        },
+        "sv": {
+          "type": "string"
+        }
       },
-      "required": ["fi"]
+      "required": [
+        "fi"
+      ]
+    },
+    "richTextHtml": {
+      "type": "string",
+      "description": "HTML rich text. Supported tags: <p dir=\"ltr\">, <strong> (bold), <em> (italic), <u> (underline), <a href=\"...\" rel=\"noopener noreferrer nofollow\"> (links), <ul>/<ol>/<li> (lists, can be nested). All text must be wrapped in <p> tags. Empty paragraph: <p></p>"
     },
     "coordinates": {
       "type": "array",
-      "items": { "type": "number" },
+      "items": {
+        "type": "number"
+      },
       "minItems": 2,
       "maxItems": 2,
-      "description": "[longitude, latitude]"
+      "description": "[longitude, latitude] - note: longitude first (GeoJSON order)"
     },
     "address": {
       "type": "object",
       "properties": {
-        "street": { "type": "string" },
-        "postal_code": { "type": "string" },
-        "city": { "type": "string", "default": "Helsinki" },
-        "state": { "type": "string", "default": "Uusimaa" },
-        "country": { "type": "string", "default": "FI" },
-        "coordinates": { "$ref": "#/$defs/coordinates" },
-        "zoom": { "type": "integer", "default": 16 }
+        "street": {
+          "type": "string"
+        },
+        "postal_code": {
+          "type": "string",
+          "pattern": "^[0-9]{5}$"
+        },
+        "city": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "country": {
+          "type": "string",
+          "default": "FI",
+          "enum": [
+            "FI"
+          ]
+        },
+        "coordinates": {
+          "$ref": "#/$defs/coordinates"
+        },
+        "zoom": {
+          "type": "integer",
+          "default": 16,
+          "minimum": 1,
+          "maximum": 20
+        }
       },
-      "required": ["street", "postal_code", "coordinates"]
+      "required": [
+        "postal_code"
+      ]
     },
     "weeklySchedule": {
       "type": "object",
-      "required": ["weekday", "start_time", "end_time"],
+      "required": [
+        "weekday",
+        "start_time",
+        "end_time"
+      ],
       "properties": {
         "weekday": {
           "type": "integer",
           "minimum": 1,
           "maximum": 7,
-          "description": "1=Monday, 7=Sunday"
+          "description": "1=Monday, 2=Tuesday, ..., 7=Sunday"
         },
         "start_time": {
           "type": "string",
           "pattern": "^[0-2][0-9]:[0-5][0-9]$",
-          "description": "HH:MM format"
+          "description": "HH:MM format (24-hour)"
         },
         "end_time": {
           "type": "string",
           "pattern": "^[0-2][0-9]:[0-5][0-9]$",
-          "description": "HH:MM format"
+          "description": "HH:MM format (24-hour)"
         }
       }
     },
+    "eventType": {
+      "type": "string",
+      "enum": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "description": "1=single event, 2=recurring on specific days, 3=date range (continuous), 4=weekly recurring with daySpecificTimes"
+    },
+    "recurrencePeriod": {
+      "type": "string",
+      "enum": [
+        "P1D",
+        "P1W",
+        "P2W",
+        "P1M"
+      ],
+      "description": "P1D=daily (for date ranges), P1W=weekly, P2W=bi-weekly, P1M=monthly"
+    },
+    "recurrenceGap": {
+      "type": "string",
+      "enum": [
+        "P1W",
+        "P2W",
+        "P3W",
+        "P4W"
+      ],
+      "description": "Gap between occurrences. P2W with period P1W = every other week"
+    },
     "schedule": {
       "type": "object",
-      "required": ["start_date", "end_date", "weekly"],
+      "required": [
+        "start_date",
+        "end_date"
+      ],
       "properties": {
         "start_date": {
           "type": "string",
@@ -119,99 +189,224 @@
           "type": "string",
           "default": "Europe/Helsinki"
         },
+        "event_type": {
+          "$ref": "#/$defs/eventType",
+          "default": "4",
+          "description": "Type of schedule. Most common: 4 (weekly recurring)"
+        },
+        "recurrence_period": {
+          "$ref": "#/$defs/recurrencePeriod",
+          "default": "P1W"
+        },
+        "recurrence_gap": {
+          "$ref": "#/$defs/recurrenceGap",
+          "description": "Optional gap for bi-weekly etc. Use P2W with period P1W for every other week"
+        },
         "weekly": {
           "type": "array",
-          "items": { "$ref": "#/$defs/weeklySchedule" },
-          "minItems": 1
+          "items": {
+            "$ref": "#/$defs/weeklySchedule"
+          },
+          "description": "Day-specific times for recurring events (event_type 2 or 4)"
+        },
+        "exclude": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "date"
+          },
+          "description": "Dates to exclude (YYYY-MM-DD)"
         }
       }
     },
     "scheduleDefaults": {
       "type": "object",
       "properties": {
-        "timezone": { "type": "string", "default": "Europe/Helsinki" }
+        "timezone": {
+          "type": "string",
+          "default": "Europe/Helsinki"
+        },
+        "event_type": {
+          "$ref": "#/$defs/eventType",
+          "default": "4"
+        },
+        "recurrence_period": {
+          "$ref": "#/$defs/recurrencePeriod",
+          "default": "P1W"
+        }
       }
+    },
+    "accessibilityOption": {
+      "type": "string",
+      "enum": [
+        "ac_unknow",
+        "ac_wheelchair",
+        "ac_rollator",
+        "ac_inductionloop",
+        "ac_itoilet",
+        "ac_parking"
+      ],
+      "description": "ac_unknow=unknown, ac_wheelchair=wheelchair accessible, ac_rollator=rollator accessible, ac_inductionloop=hearing loop, ac_itoilet=accessible toilet, ac_parking=parking available"
+    },
+    "channelType": {
+      "type": "string",
+      "enum": [
+        "place",
+        "online",
+        "phone",
+        "hybrid"
+      ],
+      "description": "place=physical location, online=virtual/web, phone=phone-based, hybrid=combination"
     },
     "location": {
       "type": "object",
-      "required": ["address", "summary"],
       "properties": {
         "type": {
-          "type": "string",
-          "enum": ["place", "online", "hybrid"],
+          "$ref": "#/$defs/channelType",
           "default": "place"
         },
-        "address": { "$ref": "#/$defs/address" },
-        "summary": { "$ref": "#/$defs/localizedText" },
+        "address": {
+          "$ref": "#/$defs/address"
+        },
+        "summary": {
+          "$ref": "#/$defs/localizedText"
+        },
         "accessibility": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": ["ac_unknow"]
+          "items": {
+            "$ref": "#/$defs/accessibilityOption"
+          },
+          "default": [
+            "ac_unknow"
+          ]
+        },
+        "phone": {
+          "type": "string",
+          "description": "Phone number for phone-based channels"
+        },
+        "www": {
+          "type": "string",
+          "format": "uri",
+          "description": "Website URL for online channels"
         }
       }
     },
     "locationDefaults": {
       "type": "object",
       "properties": {
-        "type": { "type": "string", "default": "place" },
+        "type": {
+          "$ref": "#/$defs/channelType",
+          "default": "place"
+        },
         "regions": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": ["city/FI/Helsinki"]
+          "items": {
+            "$ref": "#/$defs/regionOption"
+          }
         },
         "accessibility": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "$ref": "#/$defs/accessibilityOption"
+          }
         },
         "address": {
           "type": "object",
           "properties": {
-            "city": { "type": "string" },
-            "state": { "type": "string" },
-            "country": { "type": "string" },
-            "zoom": { "type": "integer" }
+            "city": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string"
+            },
+            "country": {
+              "type": "string"
+            },
+            "zoom": {
+              "type": "integer"
+            }
           }
         }
       }
     },
+    "pricingType": {
+      "type": "string",
+      "enum": [
+        "free",
+        "paid"
+      ],
+      "description": "free=maksuton, paid=maksullinen"
+    },
     "pricing": {
       "type": "object",
-      "required": ["type"],
+      "required": [
+        "type"
+      ],
       "properties": {
         "type": {
-          "type": "string",
-          "enum": ["free", "paid"],
-          "default": "paid"
+          "$ref": "#/$defs/pricingType"
         },
-        "info": { "$ref": "#/$defs/localizedText" }
+        "info": {
+          "$ref": "#/$defs/localizedText"
+        }
       }
     },
     "registration": {
       "type": "object",
-      "required": ["url", "email", "info"],
       "properties": {
-        "required": { "type": "boolean", "default": true },
-        "url": { "type": "string", "format": "uri" },
-        "email": { "type": "string", "format": "email" },
-        "info": { "$ref": "#/$defs/localizedText" }
+        "required": {
+          "type": "boolean",
+          "default": true
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "phone": {
+          "type": "string"
+        },
+        "info": {
+          "$ref": "#/$defs/localizedText"
+        }
       }
     },
     "registrationDefaults": {
       "type": "object",
       "properties": {
-        "required": { "type": "boolean", "default": true }
+        "required": {
+          "type": "boolean",
+          "default": true
+        }
       }
+    },
+    "contactType": {
+      "type": "string",
+      "enum": [
+        "email",
+        "phone",
+        "www"
+      ]
     },
     "contact": {
       "type": "object",
-      "required": ["type", "value"],
+      "required": [
+        "type",
+        "value"
+      ],
       "properties": {
         "type": {
-          "type": "string",
-          "enum": ["email", "phone", "www"]
+          "$ref": "#/$defs/contactType"
         },
-        "value": { "type": "string" },
-        "description": { "$ref": "#/$defs/localizedText" }
+        "value": {
+          "type": "string"
+        },
+        "description": {
+          "$ref": "#/$defs/localizedText"
+        }
       }
     },
     "contacts": {
@@ -219,54 +414,512 @@
       "properties": {
         "list": {
           "type": "array",
-          "items": { "$ref": "#/$defs/contact" }
+          "items": {
+            "$ref": "#/$defs/contact"
+          }
         }
       }
     },
     "image": {
       "type": "object",
       "properties": {
-        "path": { "type": "string" },
-        "alt": { "type": "string" }
+        "path": {
+          "type": "string",
+          "pattern": "\\.(jpe?g|tiff?|png)$",
+          "description": "Path to image file relative to YAML. Max 5 MB. Allowed formats: jpeg, tif, png"
+        },
+        "alt": {
+          "type": "string",
+          "description": "Alt text for accessibility"
+        }
       }
     },
     "channel": {
       "type": "object",
-      "required": ["location", "schedule"],
+      "required": [
+        "location",
+        "schedule"
+      ],
       "properties": {
-        "location": { "$ref": "#/$defs/location" },
-        "schedule": { "$ref": "#/$defs/schedule" }
+        "location": {
+          "$ref": "#/$defs/location"
+        },
+        "schedule": {
+          "$ref": "#/$defs/schedule"
+        },
+        "registration": {
+          "$ref": "#/$defs/registration"
+        }
       }
+    },
+    "activityType": {
+      "type": "string",
+      "enum": [
+        "hobby",
+        "support",
+        "voluntary"
+      ],
+      "description": "hobby=harrastukset, support=tuki ja apu, voluntary=vapaaehtoistyö"
+    },
+    "hobbyTheme": {
+      "type": "string",
+      "enum": [
+        "ht_digi_teknologia",
+        "ht_hyvinvointi",
+        "ht_kansainvalisyys",
+        "ht_kulttuuri",
+        "ht_kadentaidot",
+        "ht_luonto",
+        "ht_maanpuolustus",
+        "ht_pelastustoiminta",
+        "ht_urheilu",
+        "ht_uskonnot",
+        "ht_vaikuttaminen"
+      ],
+      "description": "Theme categories for hobby activities"
+    },
+    "hobbyFormat": {
+      "type": "string",
+      "enum": [
+        "hm_esitykset",
+        "hm_harrastukset",
+        "hm_kohtaamispaikka",
+        "hm_kylatoiminta",
+        "hm_leirit",
+        "hm_nayttelyt",
+        "hm_oleskelu",
+        "hm_oppaat",
+        "hm_ryhmat",
+        "hm_tilaisuudet"
+      ],
+      "description": "Format categories for hobby activities"
+    },
+    "ageGroup": {
+      "type": "string",
+      "enum": [
+        "any",
+        "baby",
+        "child",
+        "schoolAge",
+        "young",
+        "youngAdult",
+        "adult",
+        "elderly"
+      ],
+      "description": "Symbolic age groups. API converts to ranges: baby=0-1, child=2-6, schoolAge=7-12, young=13-17, youngAdult=18-29, adult=30-64, elderly=65+"
+    },
+    "gender": {
+      "type": "string",
+      "enum": [
+        "gender",
+        "male",
+        "female"
+      ],
+      "description": "gender=any gender, male=men only, female=women only"
+    },
+    "localeOption": {
+      "type": "string",
+      "enum": [
+        "fi-FI",
+        "sv",
+        "en",
+        "ar",
+        "ku",
+        "se-SE",
+        "so-SO",
+        "uk-UA",
+        "et-EE",
+        "ru-RU",
+        "fisl"
+      ],
+      "description": "Language the activity is conducted in"
+    },
+    "regionOption": {
+      "type": "string",
+      "enum": [
+        "state/FI/Ahvenanmaa",
+        "state/FI/Etelä-Karjala",
+        "state/FI/Etelä-Pohjanmaa",
+        "state/FI/Etelä-Savo",
+        "state/FI/Kainuu",
+        "state/FI/Kanta-Häme",
+        "state/FI/Keski-Pohjanmaa",
+        "state/FI/Keski-Suomi",
+        "state/FI/Kymenlaakso",
+        "state/FI/Lappi",
+        "state/FI/Pirkanmaa",
+        "state/FI/Pohjanmaa",
+        "state/FI/Pohjois-Karjala",
+        "state/FI/Pohjois-Pohjanmaa",
+        "state/FI/Pohjois-Savo",
+        "state/FI/Päijät-Häme",
+        "state/FI/Satakunta",
+        "state/FI/Uusimaa",
+        "state/FI/Varsinais-Suomi",
+        "city/FI/Akaa",
+        "city/FI/Alajärvi",
+        "city/FI/Alavieska",
+        "city/FI/Alavus",
+        "city/FI/Asikkala",
+        "city/FI/Askola",
+        "city/FI/Aura",
+        "city/FI/Brändö",
+        "city/FI/Eckerö",
+        "city/FI/Enonkoski",
+        "city/FI/Enontekiö",
+        "city/FI/Espoo",
+        "city/FI/Eura",
+        "city/FI/Eurajoki",
+        "city/FI/Evijärvi",
+        "city/FI/Finström",
+        "city/FI/Forssa",
+        "city/FI/Föglö",
+        "city/FI/Geta",
+        "city/FI/Haapajärvi",
+        "city/FI/Haapavesi",
+        "city/FI/Hailuoto",
+        "city/FI/Halsua",
+        "city/FI/Hamina",
+        "city/FI/Hammarland",
+        "city/FI/Hankasalmi",
+        "city/FI/Hanko",
+        "city/FI/Harjavalta",
+        "city/FI/Hartola",
+        "city/FI/Hattula",
+        "city/FI/Hausjärvi",
+        "city/FI/Heinola",
+        "city/FI/Heinävesi",
+        "city/FI/Helsinki",
+        "city/FI/Hirvensalmi",
+        "city/FI/Hollola",
+        "city/FI/Honkajoki",
+        "city/FI/Huittinen",
+        "city/FI/Humppila",
+        "city/FI/Hyrynsalmi",
+        "city/FI/Hyvinkää",
+        "city/FI/Hämeenkyrö",
+        "city/FI/Hämeenlinna",
+        "city/FI/Ii",
+        "city/FI/Iisalmi",
+        "city/FI/Iitti",
+        "city/FI/Ikaalinen",
+        "city/FI/Ilmajoki",
+        "city/FI/Ilomantsi",
+        "city/FI/Imatra",
+        "city/FI/Inari",
+        "city/FI/Inkoo",
+        "city/FI/Isojoki",
+        "city/FI/Isokyrö",
+        "city/FI/Janakkala",
+        "city/FI/Joensuu",
+        "city/FI/Jokioinen",
+        "city/FI/Jomala",
+        "city/FI/Joroinen",
+        "city/FI/Joutsa",
+        "city/FI/Juuka",
+        "city/FI/Juupajoki",
+        "city/FI/Juva",
+        "city/FI/Jyväskylä",
+        "city/FI/Jämijärvi",
+        "city/FI/Jämsä",
+        "city/FI/Järvenpää",
+        "city/FI/Kaarina",
+        "city/FI/Kaavi",
+        "city/FI/Kajaani",
+        "city/FI/Kalajoki",
+        "city/FI/Kangasala",
+        "city/FI/Kangasniemi",
+        "city/FI/Kankaanpää",
+        "city/FI/Kannonkoski",
+        "city/FI/Kannus",
+        "city/FI/Karijoki",
+        "city/FI/Karkkila",
+        "city/FI/Karstula",
+        "city/FI/Karvia",
+        "city/FI/Kaskinen",
+        "city/FI/Kauhajoki",
+        "city/FI/Kauhava",
+        "city/FI/Kauniainen",
+        "city/FI/Kaustinen",
+        "city/FI/Keitele",
+        "city/FI/Kemi",
+        "city/FI/Kemijärvi",
+        "city/FI/Keminmaa",
+        "city/FI/Kemiönsaari",
+        "city/FI/Kempele",
+        "city/FI/Kerava",
+        "city/FI/Keuruu",
+        "city/FI/Kihniö",
+        "city/FI/Kinnula",
+        "city/FI/Kirkkonummi",
+        "city/FI/Kitee",
+        "city/FI/Kittilä",
+        "city/FI/Kiuruvesi",
+        "city/FI/Kivijärvi",
+        "city/FI/Kokemäki",
+        "city/FI/Kokkola",
+        "city/FI/Kolari",
+        "city/FI/Konnevesi",
+        "city/FI/Kontiolahti",
+        "city/FI/Korsnäs",
+        "city/FI/Koski Tl",
+        "city/FI/Kotka",
+        "city/FI/Kouvola",
+        "city/FI/Kristiinankaupunki",
+        "city/FI/Kruunupyy",
+        "city/FI/Kuhmo",
+        "city/FI/Kuhmoinen",
+        "city/FI/Kumlinge",
+        "city/FI/Kuopio",
+        "city/FI/Kuortane",
+        "city/FI/Kurikka",
+        "city/FI/Kustavi",
+        "city/FI/Kuusamo",
+        "city/FI/Kyyjärvi",
+        "city/FI/Kärkölä",
+        "city/FI/Kärsämäki",
+        "city/FI/Kökar",
+        "city/FI/Lahti",
+        "city/FI/Laihia",
+        "city/FI/Laitila",
+        "city/FI/Lapinjärvi",
+        "city/FI/Lapinlahti",
+        "city/FI/Lappajärvi",
+        "city/FI/Lappeenranta",
+        "city/FI/Lapua",
+        "city/FI/Laukaa",
+        "city/FI/Lemi",
+        "city/FI/Lemland",
+        "city/FI/Lempäälä",
+        "city/FI/Leppävirta",
+        "city/FI/Lestijärvi",
+        "city/FI/Lieksa",
+        "city/FI/Lieto",
+        "city/FI/Liminka",
+        "city/FI/Liperi",
+        "city/FI/Lohja",
+        "city/FI/Loimaa",
+        "city/FI/Loppi",
+        "city/FI/Loviisa",
+        "city/FI/Luhanka",
+        "city/FI/Lumijoki",
+        "city/FI/Lumparland",
+        "city/FI/Luoto",
+        "city/FI/Luumäki",
+        "city/FI/Maalahti",
+        "city/FI/Maarianhamina",
+        "city/FI/Marttila",
+        "city/FI/Masku",
+        "city/FI/Merijärvi",
+        "city/FI/Merikarvia",
+        "city/FI/Miehikkälä",
+        "city/FI/Mikkeli",
+        "city/FI/Muhos",
+        "city/FI/Multia",
+        "city/FI/Muonio",
+        "city/FI/Mustasaari",
+        "city/FI/Muurame",
+        "city/FI/Mynämäki",
+        "city/FI/Myrskylä",
+        "city/FI/Mäntsälä",
+        "city/FI/Mänttä-Vilppula",
+        "city/FI/Mäntyharju",
+        "city/FI/Naantali",
+        "city/FI/Nakkila",
+        "city/FI/Nivala",
+        "city/FI/Nokia",
+        "city/FI/Nousiainen",
+        "city/FI/Nurmes",
+        "city/FI/Nurmijärvi",
+        "city/FI/Närpiö",
+        "city/FI/Orimattila",
+        "city/FI/Oripää",
+        "city/FI/Orivesi",
+        "city/FI/Oulainen",
+        "city/FI/Oulu",
+        "city/FI/Outokumpu",
+        "city/FI/Padasjoki",
+        "city/FI/Paimio",
+        "city/FI/Paltamo",
+        "city/FI/Parainen",
+        "city/FI/Parikkala",
+        "city/FI/Parkano",
+        "city/FI/Pedersöre",
+        "city/FI/Pelkosenniemi",
+        "city/FI/Pello",
+        "city/FI/Perho",
+        "city/FI/Pertunmaa",
+        "city/FI/Petäjävesi",
+        "city/FI/Pieksämäki",
+        "city/FI/Pielavesi",
+        "city/FI/Pietarsaari",
+        "city/FI/Pihtipudas",
+        "city/FI/Pirkkala",
+        "city/FI/Polvijärvi",
+        "city/FI/Pomarkku",
+        "city/FI/Pori",
+        "city/FI/Pornainen",
+        "city/FI/Porvoo",
+        "city/FI/Posio",
+        "city/FI/Pudasjärvi",
+        "city/FI/Pukkila",
+        "city/FI/Punkalaidun",
+        "city/FI/Puolanka",
+        "city/FI/Puumala",
+        "city/FI/Pyhtää",
+        "city/FI/Pyhäjoki",
+        "city/FI/Pyhäjärvi",
+        "city/FI/Pyhäntä",
+        "city/FI/Pyhäranta",
+        "city/FI/Pälkäne",
+        "city/FI/Pöytyä",
+        "city/FI/Raahe",
+        "city/FI/Raasepori",
+        "city/FI/Raisio",
+        "city/FI/Rantasalmi",
+        "city/FI/Ranua",
+        "city/FI/Rauma",
+        "city/FI/Rautalampi",
+        "city/FI/Rautavaara",
+        "city/FI/Rautjärvi",
+        "city/FI/Reisjärvi",
+        "city/FI/Riihimäki",
+        "city/FI/Ristijärvi",
+        "city/FI/Rovaniemi",
+        "city/FI/Ruokolahti",
+        "city/FI/Ruovesi",
+        "city/FI/Rusko",
+        "city/FI/Rääkkylä",
+        "city/FI/Saarijärvi",
+        "city/FI/Salla",
+        "city/FI/Salo",
+        "city/FI/Saltvik",
+        "city/FI/Sastamala",
+        "city/FI/Sauvo",
+        "city/FI/Savitaipale",
+        "city/FI/Savonlinna",
+        "city/FI/Savukoski",
+        "city/FI/Seinäjoki",
+        "city/FI/Sievi",
+        "city/FI/Siikainen",
+        "city/FI/Siikajoki",
+        "city/FI/Siikalatva",
+        "city/FI/Siilinjärvi",
+        "city/FI/Simo",
+        "city/FI/Sipoo",
+        "city/FI/Siuntio",
+        "city/FI/Sodankylä",
+        "city/FI/Soini",
+        "city/FI/Somero",
+        "city/FI/Sonkajärvi",
+        "city/FI/Sotkamo",
+        "city/FI/Sottunga",
+        "city/FI/Sulkava",
+        "city/FI/Sund",
+        "city/FI/Suomussalmi",
+        "city/FI/Suonenjoki",
+        "city/FI/Sysmä",
+        "city/FI/Säkyl��",
+        "city/FI/Taipalsaari",
+        "city/FI/Taivalkoski",
+        "city/FI/Taivassalo",
+        "city/FI/Tammela",
+        "city/FI/Tampere",
+        "city/FI/Tervo",
+        "city/FI/Tervola",
+        "city/FI/Teuva",
+        "city/FI/Tohmajärvi",
+        "city/FI/Toholampi",
+        "city/FI/Toivakka",
+        "city/FI/Tornio",
+        "city/FI/Turku",
+        "city/FI/Tuusniemi",
+        "city/FI/Tuusula",
+        "city/FI/Tyrnävä",
+        "city/FI/Ulvila",
+        "city/FI/Urjala",
+        "city/FI/Utajärvi",
+        "city/FI/Utsjoki",
+        "city/FI/Uurainen",
+        "city/FI/Uusikaarlepyy",
+        "city/FI/Uusikaupunki",
+        "city/FI/Vaala",
+        "city/FI/Vaasa",
+        "city/FI/Valkeakoski",
+        "city/FI/Valtimo",
+        "city/FI/Vantaa",
+        "city/FI/Varkaus",
+        "city/FI/Vehmaa",
+        "city/FI/Vesanto",
+        "city/FI/Vesilahti",
+        "city/FI/Veteli",
+        "city/FI/Vieremä",
+        "city/FI/Vihti",
+        "city/FI/Viitasaari",
+        "city/FI/Vimpeli",
+        "city/FI/Virolahti",
+        "city/FI/Virrat",
+        "city/FI/Vårdö",
+        "city/FI/Vöyri",
+        "city/FI/Ylitornio",
+        "city/FI/Ylivieska",
+        "city/FI/Ylöjärvi",
+        "city/FI/Ypäjä",
+        "city/FI/Ähtäri",
+        "city/FI/Äänekoski"
+      ],
+      "description": "Region: state/FI/Name or city/FI/Name. Leave regions array empty for national activities."
     },
     "courseDefaults": {
       "type": "object",
       "properties": {
         "type": {
-          "type": "string",
-          "enum": ["hobby", "event"],
-          "default": "hobby"
+          "$ref": "#/$defs/activityType"
         },
         "required_locales": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": ["fi", "en"]
+          "items": {
+            "type": "string",
+            "enum": [
+              "fi",
+              "en",
+              "sv"
+            ]
+          },
+          "default": [
+            "fi"
+          ]
         },
-        "summary": { "$ref": "#/$defs/localizedText" },
-        "description": { "$ref": "#/$defs/localizedText" },
+        "summary": {
+          "$ref": "#/$defs/localizedText"
+        },
+        "description": {
+          "$ref": "#/$defs/localizedText"
+        },
         "categories": {
           "type": "object",
           "properties": {
             "themes": {
               "type": "array",
-              "items": { "type": "string" }
+              "items": {
+                "$ref": "#/$defs/hobbyTheme"
+              },
+              "minItems": 1,
+              "maxItems": 2
             },
             "formats": {
               "type": "array",
-              "items": { "type": "string" }
+              "items": {
+                "$ref": "#/$defs/hobbyFormat"
+              },
+              "minItems": 1,
+              "maxItems": 1
             },
             "locales": {
               "type": "array",
-              "items": { "type": "string" }
+              "items": {
+                "$ref": "#/$defs/localeOption"
+              }
             }
           }
         },
@@ -275,11 +928,15 @@
           "properties": {
             "age_groups": {
               "type": "array",
-              "items": { "type": "string" }
+              "items": {
+                "$ref": "#/$defs/ageGroup"
+              }
             },
             "gender": {
               "type": "array",
-              "items": { "type": "string" }
+              "items": {
+                "$ref": "#/$defs/gender"
+              }
             }
           }
         }
@@ -287,46 +944,119 @@
     },
     "course": {
       "type": "object",
-      "required": ["title"],
+      "required": [
+        "title"
+      ],
       "properties": {
         "_key": {
           "type": "string",
-          "description": "Server-assigned ID (present after sync)"
+          "description": "Server-assigned ID (present after sync from lahella.fi)"
         },
-        "title": { "$ref": "#/$defs/localizedText" },
-        "type": { "type": "string" },
+        "title": {
+          "$ref": "#/$defs/localizedText"
+        },
+        "type": {
+          "$ref": "#/$defs/activityType"
+        },
         "required_locales": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string",
+            "enum": [
+              "fi",
+              "en",
+              "sv"
+            ]
+          },
+          "description": "Which translations are required"
         },
-        "summary": { "$ref": "#/$defs/localizedText" },
-        "description": { "$ref": "#/$defs/localizedText" },
+        "summary": {
+          "$ref": "#/$defs/localizedText"
+        },
+        "description": {
+          "$ref": "#/$defs/localizedText"
+        },
         "categories": {
           "type": "object",
           "properties": {
-            "themes": { "type": "array", "items": { "type": "string" } },
-            "formats": { "type": "array", "items": { "type": "string" } },
-            "locales": { "type": "array", "items": { "type": "string" } }
+            "themes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/hobbyTheme"
+              },
+              "minItems": 1,
+              "maxItems": 2,
+              "description": "Topic categories - pick 1-2 (ht_urheilu, ht_hyvinvointi, etc.)"
+            },
+            "formats": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/hobbyFormat"
+              },
+              "minItems": 1,
+              "maxItems": 1,
+              "description": "Activity format - pick exactly 1 (hm_harrastukset, hm_ryhmat, etc.)"
+            },
+            "locales": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/localeOption"
+              },
+              "description": "Languages the activity is conducted in"
+            }
           }
         },
         "demographics": {
           "type": "object",
           "properties": {
-            "age_groups": { "type": "array", "items": { "type": "string" } },
-            "gender": { "type": "array", "items": { "type": "string" } }
+            "age_groups": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ageGroup"
+              },
+              "description": "Target age groups"
+            },
+            "gender": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/gender"
+              },
+              "description": "Target gender(s)"
+            }
           }
         },
-        "location": { "$ref": "#/$defs/location" },
-        "schedule": { "$ref": "#/$defs/schedule" },
+        "regions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/regionOption"
+          },
+          "description": "Target regions (city/FI/Helsinki, state/FI/Uusimaa, etc.)"
+        },
+        "location": {
+          "$ref": "#/$defs/location"
+        },
+        "schedule": {
+          "$ref": "#/$defs/schedule"
+        },
         "channels": {
           "type": "array",
-          "items": { "$ref": "#/$defs/channel" },
+          "items": {
+            "$ref": "#/$defs/channel"
+          },
           "description": "Multiple locations/times for one course"
         },
-        "pricing": { "$ref": "#/$defs/pricing" },
-        "registration": { "$ref": "#/$defs/registration" },
-        "image": { "$ref": "#/$defs/image" },
-        "contacts": { "$ref": "#/$defs/contacts" }
+        "pricing": {
+          "$ref": "#/$defs/pricing"
+        },
+        "registration": {
+          "$ref": "#/$defs/registration"
+        },
+        "image": {
+          "$ref": "#/$defs/image"
+        },
+        "contacts": {
+          "$ref": "#/$defs/contacts"
+        }
       }
     }
   }
