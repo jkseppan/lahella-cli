@@ -3,9 +3,9 @@
 Create a course listing on lahella.fi using their API.
 
 Usage:
-    python create_course.py course_config.toml
+    python create_course.py courses.yaml [--course TITLE]
 
-The user must be logged in via browser and provide auth cookies in the config.
+The user must be logged in via browser and provide auth cookies in auth.yaml.
 """
 
 import argparse
@@ -16,59 +16,52 @@ from datetime import datetime
 from pathlib import Path
 
 import httpx
-import tomllib
+from ruamel.yaml import YAML
 
-from auth_helper import get_authenticated_session
+from auth_helper import get_authenticated_session, load_auth_config
 
 
 BASE_URL = "https://hallinta.lahella.fi"
 
 
-def merge_configs(base: dict, override: dict) -> dict:
-    """Deep merge two dictionaries, with override taking precedence.
-
-    - Arrays are concatenated (base + override)
-    - Dicts are recursively merged
-    - Other values are replaced
-    """
-    result = base.copy()
-    for key, value in override.items():
-        if key in result:
-            # Concatenate arrays
-            if isinstance(result[key], list) and isinstance(value, list):
-                result[key] = result[key] + value
-            # Recursively merge dictionaries
-            elif isinstance(result[key], dict) and isinstance(value, dict):
-                result[key] = merge_configs(result[key], value)
-            # Otherwise override
-            else:
-                result[key] = value
-        else:
-            result[key] = value
-    return result
-
-
-def load_config(config_path: Path) -> dict:
-    """Load TOML configuration file with support for auth and defaults."""
-    with open(config_path, "rb") as f:
-        config = tomllib.load(f)
-
-    # Look for auth.toml in the same directory
-    auth_path = config_path.parent / "auth.toml"
-    if auth_path.exists():
-        with open(auth_path, "rb") as f:
-            auth_config = tomllib.load(f)
-            config = merge_configs(auth_config, config)
-
-    # Look for defaults.toml in the same directory
-    defaults_path = config_path.parent / "defaults.toml"
-    if defaults_path.exists():
-        with open(defaults_path, "rb") as f:
-            defaults_config = tomllib.load(f)
-            # Merge order: auth < defaults < course-specific
-            config = merge_configs(defaults_config, config)
-
+def load_courses(courses_path: Path) -> dict:
+    """Load courses from YAML file. Returns full config with defaults resolved."""
+    yaml = YAML()
+    with open(courses_path) as f:
+        config = yaml.load(f)
     return config
+
+
+def get_course_by_title(config: dict, title: str) -> dict | None:
+    """Find a course by its Finnish title (partial match) or by index (1-based)."""
+    courses = config.get("courses", [])
+
+    # Try numeric index first (1-based)
+    if title.isdigit():
+        idx = int(title) - 1
+        if 0 <= idx < len(courses):
+            return courses[idx]
+        return None
+
+    # Exact match first
+    for course in courses:
+        if title.lower() == course.get("title", {}).get("fi", "").lower():
+            return course
+
+    # Then partial match
+    for course in courses:
+        if title.lower() in course.get("title", {}).get("fi", "").lower():
+            return course
+
+    return None
+
+
+def list_courses(config: dict) -> None:
+    """Print all available courses."""
+    print("Available courses:")
+    for i, course in enumerate(config.get("courses", []), 1):
+        title = course.get("title", {}).get("fi", "Untitled")
+        print(f"  {i}. {title}")
 
 
 
@@ -91,9 +84,9 @@ def date_to_timestamp(date_str: str) -> int:
     return int(dt.timestamp() * 1000)
 
 
-def upload_image(session: httpx.Session, config: dict, image_path: Path) -> str:
+def upload_image_for_course(session: httpx.Client, auth: dict, image_path: Path) -> str:
     """Upload an image and return the file ID."""
-    group_id = config["auth"]["group_id"]
+    group_id = auth["group_id"]
     url = f"{BASE_URL}/v1/files"
     params = {
         "group": group_id,
@@ -110,13 +103,11 @@ def upload_image(session: httpx.Session, config: dict, image_path: Path) -> str:
     return result["_key"]
 
 
-def build_channel(channel_config: dict, registration: dict, defaults: dict) -> dict:
-    """Build a single channel from config."""
+def build_channel(channel_config: dict, registration: dict) -> dict:
+    """Build a single channel from config (defaults already merged via YAML anchors)."""
     location = channel_config.get("location", {})
     schedule = channel_config.get("schedule", {})
-
-    # Merge with defaults
-    address = {**defaults.get("address", {}), **location.get("address", {})}
+    address = location.get("address", {})
 
     # Build weekly schedule
     day_specific_times = []
@@ -178,88 +169,90 @@ def build_channel(channel_config: dict, registration: dict, defaults: dict) -> d
         "map": {
             "center": {
                 "type": "Point",
-                "coordinates": address.get("coordinates", [24.9, 60.2]),
+                "coordinates": list(address.get("coordinates", [24.9, 60.2])),
             },
             "zoom": address.get("zoom", 16),
         },
-        "accessibility": location.get("accessibility", ["ac_unknow"]),
-        "registrationRequired": registration["required"],
-        "registrationUrl": registration["url"],
-        "registrationEmail": registration["email"],
+        "accessibility": list(location.get("accessibility", ["ac_unknow"])),
+        "registrationRequired": registration.get("required", True),
+        "registrationUrl": registration.get("url", ""),
+        "registrationEmail": registration.get("email", ""),
     }
 
 
-def build_activity_payload(config: dict, photo_id: str | None) -> dict:
-    """Build the activity JSON payload from config."""
-    course = config["course"]
-    pricing = config["pricing"]
-    registration = config["registration"]
-    contacts = config.get("contacts", {})
-    image = config.get("image", {})
+def build_activity_payload(course: dict, auth: dict, photo_id: str | None) -> dict:
+    """Build the activity JSON payload from course data."""
+    pricing = course.get("pricing", {})
+    registration = course.get("registration", {})
+    contacts = course.get("contacts", {})
+    image = course.get("image", {})
 
     # Build channels - support both single location and multiple channels
     channels = []
-    if "channels" in config:
+    if "channels" in course:
         # Multi-channel mode
-        defaults = {"address": config.get("location", {}).get("address", {})}
-        for ch_config in config["channels"]:
-            channels.append(build_channel(ch_config, registration, defaults))
-        # Collect regions from all channels
-        regions = config.get("location", {}).get("regions", ["city/FI/Helsinki"])
+        for ch_config in course["channels"]:
+            channels.append(build_channel(ch_config, registration))
+        # Use regions from course or default
+        regions = list(course.get("location", {}).get("regions", ["city/FI/Helsinki"]))
     else:
-        # Single location mode (backwards compatible)
-        location = config["location"]
-        schedule = config["schedule"]
+        # Single location mode
+        location = course.get("location", {})
+        schedule = course.get("schedule", {})
         channels.append(build_channel(
             {"location": location, "schedule": schedule},
-            registration,
-            {"address": location.get("address", {})}
+            registration
         ))
-        regions = location.get("regions", ["city/FI/Helsinki"])
+        regions = list(location.get("regions", ["city/FI/Helsinki"]))
 
     # Build contacts list
     contact_list = []
     for contact in contacts.get("list", []):
+        desc = contact.get("description", {})
         contact_list.append({
             "type": contact["type"],
             "value": contact["value"],
             "id": str(uuid.uuid4()),
             "translations": {
-                "fi": {"description": contact.get("description_fi", "Lisätietoja")},
-                "en": {"description": contact.get("description_en", "Details")},
+                "fi": {"description": desc.get("fi", "Lisätietoja")},
+                "en": {"description": desc.get("en", "Details")},
                 "sv": {"description": "Detaljer"},
             },
         })
 
     # Build main traits
+    categories = course.get("categories", {})
+    demographics = course.get("demographics", {})
+
     traits = {
-        "type": course["type"],
-        "requiredLocales": course["required_locales"],
+        "type": course.get("type", "hobby"),
+        "requiredLocales": list(course.get("required_locales", ["fi", "en"])),
         "channels": channels,
         "translations": {
             "fi": {
                 "name": course["title"]["fi"],
-                "summary": text_to_html(course["summary"]["fi"]),
-                "description": text_to_html(course["description"]["fi"]),
+                "summary": text_to_html(course.get("summary", {}).get("fi", "")),
+                "description": text_to_html(course.get("description", {}).get("fi", "")),
             },
             "en": {
-                "name": course["title"]["en"],
-                "summary": text_to_html(course["summary"]["en"]),
-                "description": text_to_html(course["description"]["en"]),
+                "name": course["title"].get("en", course["title"]["fi"]),
+                "summary": text_to_html(course.get("summary", {}).get("en", "")),
+                "description": text_to_html(course.get("description", {}).get("en", "")),
             },
         },
-        "theme": course["categories"]["themes"],
-        "demographic": course["demographics"]["age_groups"] + course["demographics"]["gender"],
-        "format": course["categories"]["formats"],
-        "locale": course["categories"]["locales"],
+        "theme": list(categories.get("themes", [])),
+        "demographic": list(demographics.get("age_groups", [])) + list(demographics.get("gender", [])),
+        "format": list(categories.get("formats", [])),
+        "locale": list(categories.get("locales", [])),
         "region": regions,
-        "pricing": [pricing["type"]],
+        "pricing": [pricing.get("type", "paid")],
         "contacts": contact_list,
     }
 
-    if 'info' in pricing:
-        for lang,info in pricing['info'].items():
-            traits['translations'][lang]['pricing'] = text_to_html(info)
+    if "info" in pricing:
+        for lang, info in pricing["info"].items():
+            if lang in traits["translations"]:
+                traits["translations"][lang]["pricing"] = text_to_html(info)
 
     if photo_id:
         traits["photo"] = photo_id
@@ -267,7 +260,7 @@ def build_activity_payload(config: dict, photo_id: str | None) -> dict:
 
     # Build full payload
     payload = {
-        "group": config["auth"]["group_id"],
+        "group": auth["group_id"],
         "traits": traits,
     }
 
@@ -296,7 +289,19 @@ def main():
     parser.add_argument(
         "config",
         type=Path,
-        help="Path to TOML configuration file",
+        nargs="?",
+        default=Path(__file__).parent / "courses.yaml",
+        help="Path to YAML configuration file (default: courses.yaml)",
+    )
+    parser.add_argument(
+        "--course", "-c",
+        type=str,
+        help="Course title to create (partial match)",
+    )
+    parser.add_argument(
+        "--list", "-l",
+        action="store_true",
+        help="List all available courses",
     )
     parser.add_argument(
         "--dry-run",
@@ -309,7 +314,31 @@ def main():
         print(f"Error: Config file not found: {args.config}")
         sys.exit(1)
 
-    config = load_config(args.config)
+    config = load_courses(args.config)
+
+    # List courses mode
+    if args.list:
+        list_courses(config)
+        return
+
+    # Find the course to create
+    if not args.course:
+        print("Error: Please specify a course with --course TITLE")
+        print()
+        list_courses(config)
+        sys.exit(1)
+
+    course = get_course_by_title(config, args.course)
+    if not course:
+        print(f"Error: No course found matching '{args.course}'")
+        print()
+        list_courses(config)
+        sys.exit(1)
+
+    print(f"Creating course: {course['title']['fi']}")
+
+    # Load auth config
+    auth = load_auth_config()
 
     # Get authenticated session (will auto-refresh token if needed)
     session = get_authenticated_session(auto_refresh=True)
@@ -319,11 +348,11 @@ def main():
 
     # Test authentication in dry-run mode
     if args.dry_run:
-        print("✓ Authentication successful!\n")
+        print("Authentication successful!\n")
 
     # Upload image if configured
     photo_id = None
-    image_config = config.get("image", {})
+    image_config = course.get("image", {})
     if image_config.get("path"):
         image_path = args.config.parent / image_config["path"]
         if image_path.exists():
@@ -331,12 +360,12 @@ def main():
                 print(f"Would upload image: {image_path}")
                 photo_id = "DRY_RUN_PHOTO_ID"
             else:
-                photo_id = upload_image(session, config, image_path)
+                photo_id = upload_image_for_course(session, auth, image_path)
         else:
             print(f"Warning: Image not found: {image_path}")
 
     # Build payload
-    payload = build_activity_payload(config, photo_id)
+    payload = build_activity_payload(course, auth, photo_id)
 
     if args.dry_run:
         print("\n=== DRY RUN - Would send this payload ===\n")

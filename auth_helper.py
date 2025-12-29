@@ -11,25 +11,26 @@ import time
 from pathlib import Path
 
 import httpx
-import tomllib
+from ruamel.yaml import YAML
 
 
-AUTH_FILE = Path(__file__).parent / "auth.toml"
+AUTH_FILE = Path(__file__).parent / "auth.yaml"
 BASE_URL = "https://hallinta.lahella.fi"
 
 
 def load_auth_config() -> dict:
-    """Load auth configuration from auth.toml."""
+    """Load auth configuration from auth.yaml."""
     if not AUTH_FILE.exists():
         print(f"Error: {AUTH_FILE} not found")
         sys.exit(1)
 
-    with open(AUTH_FILE, "rb") as f:
-        config = tomllib.load(f)
+    yaml = YAML()
+    with open(AUTH_FILE) as f:
+        config = yaml.load(f)
 
     auth = config.get("auth", {})
     if not auth.get("cookies"):
-        print("Error: No cookies found in auth.toml")
+        print("Error: No cookies found in auth.yaml")
         print("Run login.py first to authenticate.")
         sys.exit(1)
 
@@ -54,19 +55,20 @@ def cookies_to_string(cookies: dict) -> str:
 
 
 def update_cookies_in_file(cookies: dict) -> None:
-    """Update the cookies line in auth.toml."""
+    """Update the cookies in auth.yaml."""
     cookie_str = cookies_to_string(cookies)
-    content = AUTH_FILE.read_text()
 
-    new_content = re.sub(
-        r'^cookies = ".*"$',
-        f'cookies = "{cookie_str}"',
-        content,
-        flags=re.MULTILINE
-    )
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    with open(AUTH_FILE) as f:
+        config = yaml.load(f)
 
-    AUTH_FILE.write_text(new_content)
-    print("Updated cookies in auth.toml")
+    config["auth"]["cookies"] = cookie_str
+
+    with open(AUTH_FILE, "w") as f:
+        yaml.dump(config, f)
+
+    print("Updated cookies in auth.yaml")
 
 
 def try_refresh_token(session: httpx.Client) -> bool:

@@ -1,50 +1,49 @@
 #!/usr/bin/env python3
 """
-Automate login to hallinta.lahella.fi and update auth.toml with fresh cookies.
+Automate login to hallinta.lahella.fi and update auth.yaml with fresh cookies.
 
 Usage:
     python login.py
 """
 
-import re
 import sys
 import time
 from pathlib import Path
 
-import tomllib
+from ruamel.yaml import YAML
 from playwright.sync_api import sync_playwright
 
 
-AUTH_FILE = Path(__file__).parent / "auth.toml"
+AUTH_FILE = Path(__file__).parent / "auth.yaml"
 LOGIN_URL = "https://hallinta.lahella.fi/login"
 
 
 def load_credentials() -> tuple[str, str]:
-    """Load email and password from auth.toml."""
-    with open(AUTH_FILE, "rb") as f:
-        config = tomllib.load(f)
+    """Load email and password from auth.yaml."""
+    yaml = YAML()
+    with open(AUTH_FILE) as f:
+        config = yaml.load(f)
     auth = config.get("auth", {})
     email = auth.get("email")
     password = auth.get("password")
     if not email or not password:
-        print("Error: email and password must be set in auth.toml")
+        print("Error: email and password must be set in auth.yaml")
         sys.exit(1)
     return email, password
 
 
 def update_cookies(cookies: str) -> None:
-    """Update the cookies line in auth.toml."""
-    content = AUTH_FILE.read_text()
+    """Update the cookies in auth.yaml."""
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    with open(AUTH_FILE) as f:
+        config = yaml.load(f)
 
-    # Replace the cookies line
-    new_content = re.sub(
-        r'^cookies = ".*"$',
-        f'cookies = "{cookies}"',
-        content,
-        flags=re.MULTILINE
-    )
+    config["auth"]["cookies"] = cookies
 
-    AUTH_FILE.write_text(new_content)
+    with open(AUTH_FILE, "w") as f:
+        yaml.dump(config, f)
+
     print(f"Updated {AUTH_FILE}")
 
 

@@ -1,0 +1,333 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lahella.fi/courses-schema.json",
+  "title": "Lähellä.fi Courses Configuration",
+  "description": "Schema for managing courses on lahella.fi",
+  "type": "object",
+  "required": ["auth", "courses"],
+  "properties": {
+    "auth": {
+      "type": "object",
+      "description": "Authentication credentials",
+      "required": ["email", "password", "group_id"],
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Login email address"
+        },
+        "password": {
+          "type": "string",
+          "description": "Login password"
+        },
+        "cookies": {
+          "type": "string",
+          "description": "Session cookies (auto-updated by login script)"
+        },
+        "group_id": {
+          "type": "string",
+          "description": "Organization group ID on lahella.fi"
+        }
+      }
+    },
+    "defaults": {
+      "type": "object",
+      "description": "Shared default values (use as YAML anchors)",
+      "properties": {
+        "course": { "$ref": "#/$defs/courseDefaults" },
+        "location": { "$ref": "#/$defs/locationDefaults" },
+        "schedule": { "$ref": "#/$defs/scheduleDefaults" },
+        "pricing": { "$ref": "#/$defs/pricing" },
+        "registration": { "$ref": "#/$defs/registrationDefaults" },
+        "image": { "$ref": "#/$defs/image" },
+        "contacts": { "$ref": "#/$defs/contacts" }
+      }
+    },
+    "courses": {
+      "type": "array",
+      "description": "List of course definitions",
+      "items": { "$ref": "#/$defs/course" }
+    }
+  },
+  "$defs": {
+    "localizedText": {
+      "type": "object",
+      "properties": {
+        "fi": { "type": "string" },
+        "en": { "type": "string" },
+        "sv": { "type": "string" }
+      },
+      "required": ["fi"]
+    },
+    "coordinates": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 2,
+      "maxItems": 2,
+      "description": "[longitude, latitude]"
+    },
+    "address": {
+      "type": "object",
+      "properties": {
+        "street": { "type": "string" },
+        "postal_code": { "type": "string" },
+        "city": { "type": "string", "default": "Helsinki" },
+        "state": { "type": "string", "default": "Uusimaa" },
+        "country": { "type": "string", "default": "FI" },
+        "coordinates": { "$ref": "#/$defs/coordinates" },
+        "zoom": { "type": "integer", "default": 16 }
+      },
+      "required": ["street", "postal_code", "coordinates"]
+    },
+    "weeklySchedule": {
+      "type": "object",
+      "required": ["weekday", "start_time", "end_time"],
+      "properties": {
+        "weekday": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 7,
+          "description": "1=Monday, 7=Sunday"
+        },
+        "start_time": {
+          "type": "string",
+          "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+          "description": "HH:MM format"
+        },
+        "end_time": {
+          "type": "string",
+          "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+          "description": "HH:MM format"
+        }
+      }
+    },
+    "schedule": {
+      "type": "object",
+      "required": ["start_date", "end_date", "weekly"],
+      "properties": {
+        "start_date": {
+          "type": "string",
+          "format": "date",
+          "description": "YYYY-MM-DD"
+        },
+        "end_date": {
+          "type": "string",
+          "format": "date",
+          "description": "YYYY-MM-DD"
+        },
+        "timezone": {
+          "type": "string",
+          "default": "Europe/Helsinki"
+        },
+        "weekly": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/weeklySchedule" },
+          "minItems": 1
+        }
+      }
+    },
+    "scheduleDefaults": {
+      "type": "object",
+      "properties": {
+        "timezone": { "type": "string", "default": "Europe/Helsinki" }
+      }
+    },
+    "location": {
+      "type": "object",
+      "required": ["address", "summary"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["place", "online", "hybrid"],
+          "default": "place"
+        },
+        "address": { "$ref": "#/$defs/address" },
+        "summary": { "$ref": "#/$defs/localizedText" },
+        "accessibility": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["ac_unknow"]
+        }
+      }
+    },
+    "locationDefaults": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "default": "place" },
+        "regions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["city/FI/Helsinki"]
+        },
+        "accessibility": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "address": {
+          "type": "object",
+          "properties": {
+            "city": { "type": "string" },
+            "state": { "type": "string" },
+            "country": { "type": "string" },
+            "zoom": { "type": "integer" }
+          }
+        }
+      }
+    },
+    "pricing": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["free", "paid"],
+          "default": "paid"
+        },
+        "info": { "$ref": "#/$defs/localizedText" }
+      }
+    },
+    "registration": {
+      "type": "object",
+      "required": ["url", "email", "info"],
+      "properties": {
+        "required": { "type": "boolean", "default": true },
+        "url": { "type": "string", "format": "uri" },
+        "email": { "type": "string", "format": "email" },
+        "info": { "$ref": "#/$defs/localizedText" }
+      }
+    },
+    "registrationDefaults": {
+      "type": "object",
+      "properties": {
+        "required": { "type": "boolean", "default": true }
+      }
+    },
+    "contact": {
+      "type": "object",
+      "required": ["type", "value"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["email", "phone", "www"]
+        },
+        "value": { "type": "string" },
+        "description": { "$ref": "#/$defs/localizedText" }
+      }
+    },
+    "contacts": {
+      "type": "object",
+      "properties": {
+        "list": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/contact" }
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string" },
+        "alt": { "type": "string" }
+      }
+    },
+    "channel": {
+      "type": "object",
+      "required": ["location", "schedule"],
+      "properties": {
+        "location": { "$ref": "#/$defs/location" },
+        "schedule": { "$ref": "#/$defs/schedule" }
+      }
+    },
+    "courseDefaults": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["hobby", "event"],
+          "default": "hobby"
+        },
+        "required_locales": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["fi", "en"]
+        },
+        "summary": { "$ref": "#/$defs/localizedText" },
+        "description": { "$ref": "#/$defs/localizedText" },
+        "categories": {
+          "type": "object",
+          "properties": {
+            "themes": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "formats": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "locales": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        },
+        "demographics": {
+          "type": "object",
+          "properties": {
+            "age_groups": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "gender": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "course": {
+      "type": "object",
+      "required": ["title"],
+      "properties": {
+        "_key": {
+          "type": "string",
+          "description": "Server-assigned ID (present after sync)"
+        },
+        "title": { "$ref": "#/$defs/localizedText" },
+        "type": { "type": "string" },
+        "required_locales": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "summary": { "$ref": "#/$defs/localizedText" },
+        "description": { "$ref": "#/$defs/localizedText" },
+        "categories": {
+          "type": "object",
+          "properties": {
+            "themes": { "type": "array", "items": { "type": "string" } },
+            "formats": { "type": "array", "items": { "type": "string" } },
+            "locales": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "demographics": {
+          "type": "object",
+          "properties": {
+            "age_groups": { "type": "array", "items": { "type": "string" } },
+            "gender": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "location": { "$ref": "#/$defs/location" },
+        "schedule": { "$ref": "#/$defs/schedule" },
+        "channels": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/channel" },
+          "description": "Multiple locations/times for one course"
+        },
+        "pricing": { "$ref": "#/$defs/pricing" },
+        "registration": { "$ref": "#/$defs/registration" },
+        "image": { "$ref": "#/$defs/image" },
+        "contacts": { "$ref": "#/$defs/contacts" }
+      }
+    }
+  }
+}

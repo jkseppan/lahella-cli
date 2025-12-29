@@ -1,0 +1,8 @@
+# Authentication configuration
+# DO NOT commit this file to git!
+
+auth:
+  email: someone@example.com
+  password: trustno1
+  group_id: "1234567890"
+  # login.py will add session cookies here
