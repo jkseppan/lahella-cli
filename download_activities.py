@@ -3,10 +3,10 @@
 Download existing activities from hallinta.lahella.fi.
 
 Usage:
-    uv run download_activities.py                    # List all activities
-    uv run download_activities.py --json             # Output as JSON
-    uv run download_activities.py --yaml             # Output as YAML (for merging into courses.yaml)
-    uv run download_activities.py --id 12345         # Get single activity by ID
+    uv run download_activities.py                # List all activities
+    uv run download_activities.py --json         # Output as JSON
+    uv run download_activities.py --yaml         # Output as YAML
+    uv run download_activities.py --id 12345     # Get single activity by ID
 """
 
 import argparse
@@ -46,38 +46,30 @@ class TemplateMatcher:
         defaults = config.get("defaults", {})
         self.defaults = defaults
 
-        # Extract key templates for matching
         self._extract_templates(defaults)
 
     def _extract_templates(self, defaults: dict) -> None:
         """Extract templates we can match against."""
-        # Course defaults
         if "course" in defaults:
             self.anchors["course_defaults"] = defaults["course"]
 
-        # Location defaults
         if "location" in defaults:
             self.anchors["location_defaults"] = defaults["location"]
 
-        # Schedule defaults
         if "schedule" in defaults:
             self.anchors["schedule_defaults"] = defaults["schedule"]
 
-        # Pricing templates
         if "pricing" in defaults:
             if "paid" in defaults["pricing"]:
                 self.anchors["pricing_paid"] = defaults["pricing"]["paid"]
             if "free" in defaults["pricing"]:
                 self.anchors["pricing_free"] = defaults["pricing"]["free"]
 
-        # Text blocks
         if "text" in defaults:
             text = defaults["text"]
             for key in ["course_summary", "course_description", "harjoitus_summary",
                         "harjoitus_description", "ulko_description"]:
                 if key in text:
-                    # Map to anchor names
-                    anchor_name = key.replace("course_", "").replace("harjoitus_", "harjoitus_").replace("ulko_", "ulko_")
                     if key == "course_summary":
                         self.anchors["summary_kurssi"] = text[key]
                     elif key == "course_description":
@@ -89,12 +81,9 @@ class TemplateMatcher:
                     elif key == "ulko_description":
                         self.anchors["description_ulko"] = text[key]
 
-        # Registration
-        if "registration" in defaults:
-            if "harjoitus" in defaults["registration"]:
-                self.anchors["registration_harjoitus"] = defaults["registration"]["harjoitus"]
+        if "registration" in defaults and "harjoitus" in defaults["registration"]:
+            self.anchors["registration_harjoitus"] = defaults["registration"]["harjoitus"]
 
-        # Contacts
         if "contacts" in defaults:
             if "www" in defaults["contacts"]:
                 self.anchors["contacts_www"] = defaults["contacts"]["www"]
@@ -115,10 +104,8 @@ class TemplateMatcher:
                     return False
             return True
         elif isinstance(text1, str) and isinstance(text2, str):
-            # Use semantic HTML comparison for HTML content
             if "<" in text1 or "<" in text2:
                 return html_texts_equal(text1, text2)
-            # Fall back to plain text comparison
             return normalize_text(text1) == normalize_text(text2)
         return False
 
@@ -129,7 +116,6 @@ class TemplateMatcher:
                 return False
             return all(self._values_match(val1[k], val2[k]) for k in val1)
         if isinstance(val1, (list, CommentedSeq)) and isinstance(val2, (list, CommentedSeq)):
-            # Use set equality for order-independent comparison
             if len(val1) != len(val2):
                 return False
             return set(val1) == set(val2)
@@ -164,9 +150,11 @@ class TemplateMatcher:
             return False
         defaults = self.anchors["course_defaults"]
 
+        req_locales = course.get("required_locales", [])
+        def_locales = defaults.get("required_locales", [])
         return all([
             course.get("type") == defaults.get("type"),
-            self._values_match(course.get("required_locales", []), defaults.get("required_locales", [])),
+            self._values_match(req_locales, def_locales),
             self._values_match(course.get("categories", {}), defaults.get("categories", {})),
             self._values_match(course.get("demographics", {}), defaults.get("demographics", {})),
         ])
@@ -179,10 +167,12 @@ class TemplateMatcher:
         address = location.get("address", {})
         def_address = defaults.get("address", {})
 
+        loc_access = location.get("accessibility", [])
+        def_access = defaults.get("accessibility", [])
         return all([
             location.get("type") == defaults.get("type"),
             set(location.get("regions", [])) == set(defaults.get("regions", [])),
-            self._values_match(location.get("accessibility", []), defaults.get("accessibility", [])),
+            self._values_match(loc_access, def_access),
             address.get("city") == def_address.get("city"),
             address.get("state") == def_address.get("state"),
             address.get("country") == def_address.get("country"),
@@ -292,12 +282,9 @@ def apply_template_matching(courses: list, matcher: TemplateMatcher) -> tuple[Co
         (defaults_section, courses_list) - defaults with anchors, courses with aliases
     """
     from ruamel.yaml.comments import CommentedMap, CommentedSeq
-    from ruamel.yaml.scalarstring import LiteralScalarString
 
-    # Build defaults section with anchors
     defaults = CommentedMap()
 
-    # Course defaults
     course_def = CommentedMap()
     course_def["type"] = "hobby"
     course_def["required_locales"] = ["fi", "en"]
@@ -313,7 +300,6 @@ def apply_template_matching(courses: list, matcher: TemplateMatcher) -> tuple[Co
     course_def.yaml_set_anchor("course_defaults", always_dump=True)
     defaults["course"] = course_def
 
-    # Location defaults
     loc_def = CommentedMap()
     loc_def["type"] = "place"
     loc_def["regions"] = ["city/FI/Helsinki", "city/FI/Espoo", "city/FI/Vantaa"]
@@ -327,12 +313,10 @@ def apply_template_matching(courses: list, matcher: TemplateMatcher) -> tuple[Co
     loc_def.yaml_set_anchor("location_defaults", always_dump=True)
     defaults["location"] = loc_def
 
-    # Schedule defaults
     sched_def = CommentedMap({"timezone": "Europe/Helsinki"})
     sched_def.yaml_set_anchor("schedule_defaults", always_dump=True)
     defaults["schedule"] = sched_def
 
-    # Pricing
     pricing_section = CommentedMap()
     pricing_paid = CommentedMap({"type": "paid"})
     pricing_paid.yaml_set_anchor("pricing_paid", always_dump=True)
@@ -342,25 +326,20 @@ def apply_template_matching(courses: list, matcher: TemplateMatcher) -> tuple[Co
     pricing_section["free"] = pricing_free
     defaults["pricing"] = pricing_section
 
-    # Process courses
     processed_courses = CommentedSeq()
 
     for course in courses:
         cm = CommentedMap()
 
-        # Always include _key and title first
         if "_key" in course:
             cm["_key"] = course["_key"]
         if "_status" in course:
             cm["_status"] = course["_status"]
         cm["title"] = course.get("title", {})
 
-        # Check if matches course_defaults - use merge key
         if matcher.matches_course_defaults(course):
-            # Add merge key reference
             set_merge_key(cm, course_def)
         else:
-            # Include individual fields
             if "type" in course:
                 cm["type"] = course["type"]
             if "required_locales" in course:
@@ -370,28 +349,24 @@ def apply_template_matching(courses: list, matcher: TemplateMatcher) -> tuple[Co
             if "demographics" in course:
                 cm["demographics"] = dict(course["demographics"])
 
-        # Summary - check for alias
         if "summary" in course:
             anchor = matcher.find_matching_anchor("summary", course["summary"])
             if anchor:
                 cm.yaml_add_eol_comment(f"matches *{anchor}", "summary")
             cm["summary"] = dict(course["summary"])
 
-        # Description - check for alias
         if "description" in course:
             anchor = matcher.find_matching_anchor("description", course["description"])
             if anchor:
                 cm.yaml_add_eol_comment(f"matches *{anchor}", "description")
             cm["description"] = dict(course["description"])
 
-        # Location
         if "location" in course:
             loc = course["location"]
             loc_cm = CommentedMap()
 
             if matcher.matches_location_defaults(loc):
                 set_merge_key(loc_cm, loc_def)
-                # Only add non-default fields
                 if "address" in loc:
                     addr = loc["address"]
                     addr_cm = CommentedMap()
@@ -406,7 +381,6 @@ def apply_template_matching(courses: list, matcher: TemplateMatcher) -> tuple[Co
                 if "summary" in loc:
                     loc_cm["summary"] = dict(loc["summary"])
             else:
-                # Full location
                 for k, v in loc.items():
                     if isinstance(v, dict):
                         loc_cm[k] = dict(v)
@@ -417,11 +391,9 @@ def apply_template_matching(courses: list, matcher: TemplateMatcher) -> tuple[Co
 
             cm["location"] = loc_cm
 
-        # Schedule
         if "schedule" in course:
             sched = course["schedule"]
             sched_cm = CommentedMap()
-            # Always merge schedule defaults for timezone
             set_merge_key(sched_cm, sched_def)
             if "start_date" in sched:
                 sched_cm["start_date"] = sched["start_date"]
@@ -434,7 +406,6 @@ def apply_template_matching(courses: list, matcher: TemplateMatcher) -> tuple[Co
                 sched_cm["weekly"] = weekly_seq
             cm["schedule"] = sched_cm
 
-        # Channels (multi-location)
         if "channels" in course:
             channels_seq = CommentedSeq()
             for ch in course["channels"]:
@@ -485,7 +456,6 @@ def apply_template_matching(courses: list, matcher: TemplateMatcher) -> tuple[Co
                 channels_seq.append(ch_cm)
             cm["channels"] = channels_seq
 
-        # Pricing
         if "pricing" in course:
             pricing = course["pricing"]
             pricing_type = pricing.get("type", "paid")
@@ -503,15 +473,12 @@ def apply_template_matching(courses: list, matcher: TemplateMatcher) -> tuple[Co
                     pricing_cm["info"] = dict(pricing["info"])
                 cm["pricing"] = pricing_cm
 
-        # Registration
         if "registration" in course:
             cm["registration"] = dict(course["registration"])
 
-        # Image
         if "image" in course:
             cm["image"] = dict(course["image"])
 
-        # Contacts
         if "contacts" in course:
             cm["contacts"] = dict(course["contacts"])
 
@@ -552,13 +519,10 @@ def main():
     )
     args = parser.parse_args()
 
-    # Load auth and get session
     auth = load_auth_config()
     session = get_authenticated_session(auto_refresh=True)
-
     group_id = auth["group_id"]
 
-    # Fetch data
     if args.id:
         print(f"Fetching activity {args.id}...", file=sys.stderr)
         activities = [fetch_activity_by_id(session, args.id)]
@@ -568,18 +532,13 @@ def main():
 
     print(f"Downloaded {len(activities)} activities.", file=sys.stderr)
 
-    # Output
     if args.json:
         output = json.dumps(activities, indent=2, ensure_ascii=False)
     elif args.yaml:
-        # Convert to YAML schema
         courses = [convert_activity_to_yaml_schema(a) for a in activities]
-
-        # Apply template matching
         matcher = TemplateMatcher(args.templates)
         defaults, processed_courses = apply_template_matching(courses, matcher)
 
-        # Build final structure
         result = CommentedMap()
         result["defaults"] = defaults
         result["downloaded_courses"] = processed_courses
@@ -599,11 +558,9 @@ def main():
             yaml.dump(result, stream)
             output = stream.getvalue()
     else:
-        # Default: list summary
         list_activities(activities)
         return
 
-    # Write output
     if args.output:
         with open(args.output, "w") as f:
             f.write(output)

@@ -8,9 +8,60 @@ schema (courses.yaml) and the API JSON format used by hallinta.lahella.fi.
 
 import re
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any, Literal, TypedDict, cast
+
+
+# =============================================================================
+# TYPE DEFINITIONS
+# =============================================================================
+
+Direction = Literal["to_api", "from_api"]
+
+
+class DemographicsDict(TypedDict):
+    """Demographics data from API (from_api direction)."""
+
+    age_groups: list[str]
+    gender: list[str]
+
+
+class AddressDict(TypedDict, total=False):
+    """Address data for a channel location."""
+
+    street: str
+    postal_code: str
+    city: str
+    state: str
+    country: str
+    coordinates: list[float]
+    zoom: int
+
+
+class LocationDict(TypedDict, total=False):
+    """Location data for a channel."""
+
+    type: str
+    accessibility: list[str]
+    address: AddressDict
+    summary: dict[str, str]
+
+
+class ScheduleDict(TypedDict, total=False):
+    """Schedule data for a channel."""
+
+    timezone: str
+    start_date: str
+    end_date: str
+    weekly: list[dict[str, Any]]
+
+
+class ChannelDataDict(TypedDict):
+    """Channel data structure used when parsing multi-channel activities."""
+
+    location: LocationDict
+    schedule: ScheduleDict
 
 
 # =============================================================================
@@ -32,12 +83,10 @@ def get_nested(obj: dict, path: str, default: Any = None) -> Any:
 
     for part in parts:
         if isinstance(part, int):
-            # Array index
             if not isinstance(current, list) or part >= len(current):
                 return default
             current = current[part]
         else:
-            # Dict key
             if not isinstance(current, dict) or part not in current:
                 return default
             current = current[part]
@@ -53,29 +102,30 @@ def set_nested(obj: dict, path: str, value: Any) -> None:
     Supports array indexing: "channels[0].type"
     """
     parts = _parse_path(path)
-    current = obj
+    current: dict | list = obj  # Can be dict or list during traversal
 
     for i, part in enumerate(parts[:-1]):
         next_part = parts[i + 1]
 
         if isinstance(part, int):
-            # Extend list if needed
+            assert isinstance(current, list)
             while len(current) <= part:
                 current.append({} if not isinstance(next_part, int) else [])
             current = current[part]
         else:
-            # Create dict/list if needed
+            assert isinstance(current, dict)
             if part not in current:
                 current[part] = [] if isinstance(next_part, int) else {}
             current = current[part]
 
-    # Set the final value
     final_part = parts[-1]
     if isinstance(final_part, int):
+        assert isinstance(current, list)
         while len(current) <= final_part:
             current.append(None)
         current[final_part] = value
     else:
+        assert isinstance(current, dict)
         current[final_part] = value
 
 
@@ -83,7 +133,6 @@ def _parse_path(path: str) -> list[str | int]:
     """Parse a dot-notation path with array indices into parts."""
     parts = []
     for segment in path.split("."):
-        # Check for array index: "channels[0]"
         match = re.match(r"(\w+)\[(\d+)\]", segment)
         if match:
             parts.append(match.group(1))
@@ -121,13 +170,11 @@ def extract_html_text(html: str) -> str:
             self.text_parts.append(data)
 
         def handle_entityref(self, name):
-            # Handle &nbsp; etc.
             from html.entities import name2codepoint
             if name in name2codepoint:
                 self.text_parts.append(chr(name2codepoint[name]))
 
         def handle_charref(self, name):
-            # Handle &#123; or &#x7B;
             if name.startswith('x'):
                 self.text_parts.append(chr(int(name[1:], 16)))
             else:
@@ -360,7 +407,7 @@ class SpecialCases:
     """Handlers for complex transformations that can't be expressed as simple mappings."""
 
     @staticmethod
-    def handle_demographics(data: dict, direction: str) -> dict | list:
+    def handle_demographics(data: dict, direction: Direction) -> DemographicsDict | list[str]:
         """
         Merge/split age_groups and gender into single demographic array.
 
@@ -371,6 +418,9 @@ class SpecialCases:
 
         API format:
             traits.demographic: [ageGroup/range:18-29, ..., gender/gender]
+
+        Returns:
+            list[str] for to_api direction, DemographicsDict for from_api direction.
         """
         if direction == "to_api":
             demographics = data.get("demographics", {})
@@ -380,13 +430,13 @@ class SpecialCases:
         else:
             # from_api: split by prefix
             demographic = get_nested(data, "traits.demographic", [])
-            return {
-                "age_groups": [d for d in demographic if d.startswith("ageGroup/")],
-                "gender": [d for d in demographic if d.startswith("gender/")],
-            }
+            return DemographicsDict(
+                age_groups=[d for d in demographic if d.startswith("ageGroup/")],
+                gender=[d for d in demographic if d.startswith("gender/")],
+            )
 
     @staticmethod
-    def handle_weekly_schedule(data: dict, direction: str) -> list[dict]:
+    def handle_weekly_schedule(data: dict, direction: Direction) -> list[dict]:
         """
         Transform weekly schedule between formats.
 
@@ -428,7 +478,7 @@ class SpecialCases:
             ]
 
     @staticmethod
-    def handle_contacts(data: dict, direction: str) -> list[dict]:
+    def handle_contacts(data: dict, direction: Direction) -> list[dict]:
         """
         Transform contacts, adding UUIDs on create.
 
@@ -497,7 +547,6 @@ class SpecialCases:
         """
         address = location.get("address", {})
 
-        # Build address for all languages
         address_fi = {
             "street": address.get("street", ""),
             "postalCode": address.get("postal_code", ""),
@@ -518,18 +567,15 @@ class SpecialCases:
             "country": address.get("country", "FI"),
         }
 
-        # Build weekly schedule
-        day_specific_times = []
-        for weekly in schedule.get("weekly", []):
-            day_specific_times.append(
-                {
-                    "weekday": weekly["weekday"],
-                    "startTime": weekly["start_time"],
-                    "endTime": weekly["end_time"],
-                }
-            )
+        day_specific_times = [
+            {
+                "weekday": weekly["weekday"],
+                "startTime": weekly["start_time"],
+                "endTime": weekly["end_time"],
+            }
+            for weekly in schedule.get("weekly", [])
+        ]
 
-        # Build recurrence
         recurrence = {
             "period": "P1W",
             "exclude": [],
@@ -653,7 +699,6 @@ class Transformer:
         if group_id:
             result["group"] = group_id
 
-        # Apply simple field mappings
         for spec in self.mappings:
             value = get_nested(course, spec.yaml_path, spec.default)
             if value is None:
@@ -666,20 +711,15 @@ class Transformer:
 
             set_nested(result, spec.api_path, value)
 
-        # Handle special cases
-        # Demographics
         demographics = SpecialCases.handle_demographics(course, "to_api")
         if demographics:
             set_nested(result, "traits.demographic", demographics)
 
-        # Contacts
         contacts = SpecialCases.handle_contacts(course, "to_api")
         if contacts:
             set_nested(result, "traits.contacts", contacts)
 
-        # Channels - check for multi-channel mode
         if "channels" in course:
-            # Multi-channel: build each channel
             channels = []
             registration = course.get("registration", {})
             for ch in course["channels"]:
@@ -690,7 +730,6 @@ class Transformer:
                 )
             set_nested(result, "traits.channels", channels)
         else:
-            # Single-channel: build from location + schedule
             location = course.get("location", {})
             schedule = course.get("schedule", {})
             registration = course.get("registration", {})
@@ -713,13 +752,11 @@ class Transformer:
         """
         result: dict = {}
 
-        # Apply simple field mappings in reverse
         for spec in self.mappings:
             value = get_nested(activity, spec.api_path)
             if value is None:
                 continue
 
-            # Unwrap single-element arrays
             if spec.array_wrap and isinstance(value, list) and len(value) == 1:
                 value = value[0]
 
@@ -727,65 +764,61 @@ class Transformer:
 
             set_nested(result, spec.yaml_path, value)
 
-        # Handle special cases
-        # Demographics
-        demographics = SpecialCases.handle_demographics(activity, "from_api")
+        # cast() because we know direction is from_api -> returns DemographicsDict
+        demographics = cast(
+            DemographicsDict, SpecialCases.handle_demographics(activity, "from_api")
+        )
         if demographics.get("age_groups") or demographics.get("gender"):
             set_nested(result, "demographics", demographics)
 
-        # Contacts
         contacts = SpecialCases.handle_contacts(activity, "from_api")
         if contacts:
             set_nested(result, "contacts.list", contacts)
 
-        # Weekly schedule
         weekly = SpecialCases.handle_weekly_schedule(activity, "from_api")
         if weekly:
             set_nested(result, "schedule.weekly", weekly)
 
-        # Check for multi-channel
         channels = get_nested(activity, "traits.channels", [])
         if len(channels) > 1:
-            # Multi-channel mode: extract each channel
-            result_channels = []
+            result_channels: list[ChannelDataDict] = []
             for ch in channels:
-                ch_data = {"location": {}, "schedule": {}}
-
-                # Extract location info
                 ch_trans = ch.get("translations", {}).get("fi", {})
                 ch_addr = ch_trans.get("address", {})
-                ch_data["location"] = {
-                    "type": ch.get("type", ["place"])[0]
-                    if ch.get("type")
-                    else "place",
-                    "accessibility": list(ch.get("accessibility", ["ac_unknow"])),
-                    "address": {
-                        "street": ch_addr.get("street", ""),
-                        "postal_code": ch_addr.get("postalCode", ""),
-                        "city": ch_addr.get("city", "Helsinki"),
-                        "state": ch_addr.get("state", "Uusimaa"),
-                        "country": ch_addr.get("country", "FI"),
-                    },
-                    "summary": {},
+
+                address: AddressDict = {
+                    "street": ch_addr.get("street", ""),
+                    "postal_code": ch_addr.get("postalCode", ""),
+                    "city": ch_addr.get("city", "Helsinki"),
+                    "state": ch_addr.get("state", "Uusimaa"),
+                    "country": ch_addr.get("country", "FI"),
                 }
 
-                # Coordinates
                 map_data = ch.get("map", {})
                 center = map_data.get("center", {})
                 if center.get("coordinates"):
-                    ch_data["location"]["address"]["coordinates"] = center[
-                        "coordinates"
-                    ]
-                    ch_data["location"]["address"]["zoom"] = map_data.get("zoom", 16)
+                    address["coordinates"] = center["coordinates"]
+                    address["zoom"] = map_data.get("zoom", 16)
 
-                # Location summary (stored as HTML, passed through as-is)
+                summary: dict[str, str] = {}
                 if ch_trans.get("summary"):
-                    ch_data["location"]["summary"]["fi"] = ch_trans["summary"]
+                    summary["fi"] = ch_trans["summary"]
                 en_trans = ch.get("translations", {}).get("en", {})
                 if en_trans.get("summary"):
-                    ch_data["location"]["summary"]["en"] = en_trans["summary"]
+                    summary["en"] = en_trans["summary"]
 
-                # Schedule
+                location: LocationDict = {
+                    "type": ch.get("type", ["place"])[0] if ch.get("type") else "place",
+                    "accessibility": list(ch.get("accessibility", ["ac_unknow"])),
+                    "address": address,
+                    "summary": summary,
+                }
+
+                ch_data: ChannelDataDict = {
+                    "location": location,
+                    "schedule": {},
+                }
+
                 events = ch.get("events", [])
                 if events:
                     event = events[0]

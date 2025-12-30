@@ -12,6 +12,30 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "filelock>=3.16.0",
     "pytest>=9.0.2",
     "pytest-httpx>=0.35.0",
+    "ruff>=0.14.10",
+    "ty>=0.0.8",
 ]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "F",      # pyflakes
+    "B",      # flake8-bugbear
+    "SIM",    # flake8-simplify
+    "TRY",    # tryceratops (exception handling)
+    "RUF",    # Ruff-specific rules
+]
+ignore = [
+    "TRY003", # Avoid specifying long messages outside the exception class
+    "TRY300", # Consider moving this statement to an else block
+]
+
+[tool.ty.src]
+# Exclude test files - type errors there would just cause test failures anyway
+exclude = ["test_*.py"]

@@ -6,7 +6,6 @@ Run with: uv run pytest test_field_mapping.py -v
 """
 
 import pytest
-from datetime import datetime
 
 from field_mapping import (
     # Helper functions
@@ -606,7 +605,8 @@ class TestTransformerYamlToApi:
 
         result = transformer.yaml_to_api(course)
 
-        assert result["traits"]["translations"]["fi"]["summary"] == '<p dir="ltr">Kurssin kuvaus</p>'
+        expected = '<p dir="ltr">Kurssin kuvaus</p>'
+        assert result["traits"]["translations"]["fi"]["summary"] == expected
 
     def test_pricing_array_wrapped(self):
         transformer = Transformer()
@@ -771,17 +771,37 @@ class TestTransformerApiToYaml:
                         "type": ["place"],
                         "accessibility": ["ac_unknow"],
                         "translations": {
-                            "fi": {"address": {"postalCode": "00100", "city": "Helsinki", "state": "Uusimaa", "country": "FI"}}
+                            "fi": {
+                                "address": {
+                                    "postalCode": "00100",
+                                    "city": "Helsinki",
+                                    "state": "Uusimaa",
+                                    "country": "FI",
+                                }
+                            }
                         },
-                        "events": [{"start": 1736899200000, "recurrence": {"end": 1747267200000, "daySpecificTimes": []}}],
+                        "events": [{
+                            "start": 1736899200000,
+                            "recurrence": {"end": 1747267200000, "daySpecificTimes": []},
+                        }],
                     },
                     {
                         "type": ["place"],
                         "accessibility": ["ac_unknow"],
                         "translations": {
-                            "fi": {"address": {"postalCode": "00200", "city": "Helsinki", "state": "Uusimaa", "country": "FI"}}
+                            "fi": {
+                                "address": {
+                                    "postalCode": "00200",
+                                    "city": "Helsinki",
+                                    "state": "Uusimaa",
+                                    "country": "FI",
+                                }
+                            }
                         },
-                        "events": [{"start": 1736899200000, "recurrence": {"end": 1747267200000, "daySpecificTimes": []}}],
+                        "events": [{
+                            "start": 1736899200000,
+                            "recurrence": {"end": 1747267200000, "daySpecificTimes": []},
+                        }],
                     },
                 ],
             }
@@ -880,8 +900,14 @@ class TestIntegration:
                 "en": '<p dir="ltr">An elementary course in tai chi</p>',
             },
             "description": {
-                "fi": '<p dir="ltr">Peruskurssit on tarkoitettu uusille vasta-alkajille.</p><p dir="ltr">Liikkeet tehdään rauhallisesti.</p>',
-                "en": '<p dir="ltr">Elementary courses for beginners.</p><p dir="ltr">Movements are performed slowly.</p>',
+                "fi": (
+                    '<p dir="ltr">Peruskurssit on tarkoitettu uusille vasta-alkajille.</p>'
+                    '<p dir="ltr">Liikkeet tehdään rauhallisesti.</p>'
+                ),
+                "en": (
+                    '<p dir="ltr">Elementary courses for beginners.</p>'
+                    '<p dir="ltr">Movements are performed slowly.</p>'
+                ),
             },
             "categories": {
                 "themes": ["ht_hyvinvointi", "ht_urheilu"],
@@ -889,7 +915,11 @@ class TestIntegration:
                 "locales": ["fi-FI"],
             },
             "demographics": {
-                "age_groups": ["ageGroup/range:18-29", "ageGroup/range:30-64", "ageGroup/range:65-99"],
+                "age_groups": [
+                    "ageGroup/range:18-29",
+                    "ageGroup/range:30-64",
+                    "ageGroup/range:65-99",
+                ],
                 "gender": ["gender/gender"],
             },
             "location": {
@@ -961,8 +991,13 @@ class TestIntegration:
 
         # Check translations (HTML passed through unchanged)
         assert traits["translations"]["fi"]["name"] == "Taiji-kurssi Lauttasaaressa"
-        assert traits["translations"]["fi"]["summary"] == '<p dir="ltr">Taiji-peruskurssi: kehon ja mielen rentoutusta</p>'
-        assert traits["translations"]["fi"]["description"] == '<p dir="ltr">Peruskurssit on tarkoitettu uusille vasta-alkajille.</p><p dir="ltr">Liikkeet tehdään rauhallisesti.</p>'
+        expected_summary = '<p dir="ltr">Taiji-peruskurssi: kehon ja mielen rentoutusta</p>'
+        assert traits["translations"]["fi"]["summary"] == expected_summary
+        expected_desc = (
+            '<p dir="ltr">Peruskurssit on tarkoitettu uusille vasta-alkajille.</p>'
+            '<p dir="ltr">Liikkeet tehdään rauhallisesti.</p>'
+        )
+        assert traits["translations"]["fi"]["description"] == expected_desc
 
         # Check categories
         assert traits["theme"] == ["ht_hyvinvointi", "ht_urheilu"]

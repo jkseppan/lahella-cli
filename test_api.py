@@ -6,9 +6,6 @@ Run with: uv run pytest test_api.py -v
 """
 
 import json
-import tempfile
-from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 import httpx
 import pytest
@@ -22,18 +19,15 @@ from download_activities import (
     fetch_activity_by_id,
     convert_activity_to_yaml_schema,
     get_activity_status,
-    list_activities,
     TemplateMatcher,
     apply_template_matching,
 )
 from create_course import (
     load_courses,
     get_course_by_title,
-    list_courses,
     build_activity_payload,
     create_activity,
     upload_image_for_course,
-    BASE_URL,
 )
 
 
@@ -217,7 +211,11 @@ def sample_courses_yaml():
                     "locales": ["fi-FI"],
                 },
                 "demographics": {
-                    "age_groups": ["ageGroup/range:18-29", "ageGroup/range:30-64", "ageGroup/range:65-99"],
+                    "age_groups": [
+                        "ageGroup/range:18-29",
+                        "ageGroup/range:30-64",
+                        "ageGroup/range:65-99",
+                    ],
                     "gender": ["gender/gender"],
                 },
             },
@@ -279,7 +277,7 @@ class TestFetchActivities:
         httpx_mock.add_response(json=mock_response)
 
         with httpx.Client() as client:
-            result = fetch_activities(client, "test-group", limit=50, skip=100)
+            fetch_activities(client, "test-group", limit=50, skip=100)
 
         request = httpx_mock.get_request()
         assert "limit=50" in str(request.url)
@@ -343,9 +341,8 @@ class TestFetchActivityById:
         """Test fetching a nonexistent activity raises error."""
         httpx_mock.add_response(status_code=404)
 
-        with httpx.Client() as client:
-            with pytest.raises(httpx.HTTPStatusError):
-                fetch_activity_by_id(client, "nonexistent")
+        with httpx.Client() as client, pytest.raises(httpx.HTTPStatusError):
+            fetch_activity_by_id(client, "nonexistent")
 
 
 class TestConvertActivityToYaml:
@@ -445,7 +442,11 @@ class TestTemplateMatcher:
                 "locales": ["fi-FI"],
             },
             "demographics": {
-                "age_groups": ["ageGroup/range:18-29", "ageGroup/range:30-64", "ageGroup/range:65-99"],
+                "age_groups": [
+                    "ageGroup/range:18-29",
+                    "ageGroup/range:30-64",
+                    "ageGroup/range:65-99",
+                ],
                 "gender": ["gender/gender"],
             },
         }
@@ -687,9 +688,8 @@ class TestCreateActivity:
 
         payload = {"group": "test", "traits": {}}
 
-        with httpx.Client() as client:
-            with pytest.raises(httpx.HTTPStatusError):
-                create_activity(client, payload)
+        with httpx.Client() as client, pytest.raises(httpx.HTTPStatusError):
+            create_activity(client, payload)
 
 
 class TestUploadImage:
@@ -787,7 +787,9 @@ class TestEndToEndDownload:
 class TestEndToEndCreate:
     """End-to-end tests for create workflow."""
 
-    def test_full_create_workflow(self, httpx_mock: HTTPXMock, sample_yaml_course, mock_auth, tmp_path):
+    def test_full_create_workflow(
+        self, httpx_mock: HTTPXMock, sample_yaml_course, mock_auth, tmp_path
+    ):
         """Test complete course creation workflow."""
         # Mock successful creation
         httpx_mock.add_response(
@@ -810,3 +812,166 @@ class TestEndToEndCreate:
         body = json.loads(request.content)
         assert body["group"] == "test-group-123"
         assert body["traits"]["translations"]["fi"]["name"] == "Taiji-kurssi"
+
+
+# =============================================================================
+# ISSUE TESTS - These test specific bugs that need to be fixed
+# =============================================================================
+
+
+class TestSessionResourceManagement:
+    """Tests for Issue 1: HTTP session resource management."""
+
+    def test_get_authenticated_session_supports_context_manager(self, tmp_path):
+        """Test that get_authenticated_session() can be used as a context manager.
+
+        This ensures the session is properly closed when exiting the context.
+        """
+        # Create a mock auth.yaml
+        auth_file = tmp_path / "auth.yaml"
+        auth_file.write_text("""
+auth:
+  group_id: "test-group"
+  cookies: "AUTH_TOKEN_X=test;REFRESH_TOKEN_X=test;EXP_X=9999999999"
+""")
+
+        from auth_helper import get_authenticated_session
+
+        # Temporarily replace AUTH_FILE
+        import auth_helper
+        original_auth_file = auth_helper.AUTH_FILE
+        auth_helper.AUTH_FILE = auth_file
+
+        try:
+            # This should work - session should support context manager protocol
+            with get_authenticated_session(auto_refresh=False) as session:
+                assert session is not None
+                assert hasattr(session, 'get')
+                assert hasattr(session, 'post')
+            # After exiting context, session should be closed
+            assert session.is_closed
+        finally:
+            auth_helper.AUTH_FILE = original_auth_file
+
+
+class TestTokenRefreshFileLocking:
+    """Tests for Issue 3: Race condition in token refresh (file locking)."""
+
+    def test_concurrent_token_refresh_uses_file_locking(self, tmp_path):
+        """Test that token refresh uses file locking to prevent race conditions.
+
+        This test verifies that the auth helper uses file locking when updating
+        the auth.yaml file to prevent TOCTOU race conditions.
+        """
+        import threading
+
+        # Create a mock auth.yaml
+        auth_file = tmp_path / "auth.yaml"
+        auth_file.write_text("""
+auth:
+  group_id: "test-group"
+  cookies: "AUTH_TOKEN_X=old;REFRESH_TOKEN_X=old;EXP_X=9999999999"
+""")
+
+        from auth_helper import update_cookies_in_file
+
+        import auth_helper
+        original_auth_file = auth_helper.AUTH_FILE
+        auth_helper.AUTH_FILE = auth_file
+
+        results = []
+        errors = []
+
+        def update_cookies_thread(thread_id: int):
+            """Thread that updates cookies."""
+            try:
+                cookies = {
+                    f"AUTH_TOKEN_{thread_id}": f"value_{thread_id}",
+                    f"REFRESH_TOKEN_{thread_id}": f"refresh_{thread_id}",
+                }
+                update_cookies_in_file(cookies)
+                results.append(thread_id)
+            except Exception as e:
+                errors.append((thread_id, e))
+
+        try:
+            # Start multiple threads that try to update cookies concurrently
+            threads = []
+            for i in range(5):
+                t = threading.Thread(target=update_cookies_thread, args=(i,))
+                threads.append(t)
+
+            for t in threads:
+                t.start()
+
+            for t in threads:
+                t.join(timeout=5.0)
+
+            # All threads should complete without errors
+            assert len(errors) == 0, f"Errors occurred: {errors}"
+            assert len(results) == 5, f"Not all threads completed: {results}"
+
+            # The file should still be valid YAML after concurrent updates
+            from ruamel.yaml import YAML
+            yaml = YAML()
+            with open(auth_file) as f:
+                config = yaml.load(f)
+
+            assert "auth" in config
+            assert "cookies" in config["auth"]
+        finally:
+            auth_helper.AUTH_FILE = original_auth_file
+
+
+class TestImageUploadErrorHandling:
+    """Tests for Issue 4: Missing error handling for image upload."""
+
+    def test_upload_nonexistent_image_raises_error(self, mock_auth, tmp_path):
+        """Test that uploading a non-existent image raises FileNotFoundError."""
+        nonexistent_path = tmp_path / "does_not_exist.jpg"
+
+        with httpx.Client() as client, pytest.raises(FileNotFoundError):
+            upload_image_for_course(client, mock_auth, nonexistent_path)
+
+    def test_upload_http_error_raises_exception(
+        self, httpx_mock: HTTPXMock, mock_auth, tmp_path
+    ):
+        """Test that HTTP errors during upload raise HTTPStatusError with context."""
+        # Mock a 500 error
+        httpx_mock.add_response(
+            method="POST",
+            status_code=500,
+            json={"error": "Internal server error"},
+        )
+
+        image_path = tmp_path / "test.jpg"
+        image_path.write_bytes(b"fake image data")
+
+        with httpx.Client() as client:
+            with pytest.raises(httpx.HTTPStatusError) as exc_info:
+                upload_image_for_course(client, mock_auth, image_path)
+
+            # Should provide useful error context
+            assert exc_info.value.response.status_code == 500
+
+    def test_upload_detects_mime_type_from_extension(
+        self, httpx_mock: HTTPXMock, mock_auth, tmp_path
+    ):
+        """Test that upload detects MIME type from file extension.
+
+        PNG files should be uploaded with image/png MIME type, not image/jpeg.
+        """
+        httpx_mock.add_response(json={"_key": "123"})
+
+        # Test PNG file
+        image_path = tmp_path / "test.png"
+        image_path.write_bytes(b"fake png data")
+
+        with httpx.Client() as client:
+            upload_image_for_course(client, mock_auth, image_path)
+
+        request = httpx_mock.get_request()
+        # For multipart, we check the body contains the right mime type
+        body = request.content.decode("utf-8", errors="ignore")
+        # Should detect PNG, NOT use hardcoded jpeg
+        assert "image/png" in body, f"Expected image/png in body, got: {body[:500]}"

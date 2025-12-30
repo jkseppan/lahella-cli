@@ -58,18 +58,13 @@ def login() -> None:
         context = browser.new_context()
         page = context.new_page()
 
-        # Go to login page
         page.goto(LOGIN_URL)
         page.wait_for_load_state("networkidle")
 
-        # Fill in credentials
         page.fill('input[name="username"]', email)
         page.fill('input[name="password"]', password)
-
-        # Click login button (the one with "Kirjaudu sisään" text)
         page.click('button[type="submit"]:has-text("Kirjaudu")')
 
-        # Wait for redirect after successful login (goes to home page)
         try:
             page.wait_for_url(lambda url: "login" not in url, timeout=30000)
             print("Login successful!")
@@ -78,20 +73,19 @@ def login() -> None:
             browser.close()
             sys.exit(1)
 
-        # Give the app a moment to store tokens
+        # Allow time for tokens to be stored
         time.sleep(1)
 
-        # Extract cookies from local storage (they store tokens there)
         cookies = context.cookies()
 
-        # Build cookie string from relevant auth cookies
         cookie_parts = []
         for cookie in cookies:
-            if "AUTH_TOKEN" in cookie["name"] or "REFRESH_TOKEN" in cookie["name"] or "EXP_" in cookie["name"]:
-                cookie_parts.append(f"{cookie['name']}={cookie['value']}")
+            name = cookie["name"]
+            if "AUTH_TOKEN" in name or "REFRESH_TOKEN" in name or "EXP_" in name:
+                cookie_parts.append(f"{name}={cookie['value']}")
 
         if not cookie_parts:
-            # Try localStorage instead
+            # Tokens may be in localStorage instead of cookies
             storage = page.evaluate("() => Object.entries(localStorage)")
             for key, value in storage:
                 if "AUTH_TOKEN" in key or "REFRESH_TOKEN" in key or "EXP_" in key:

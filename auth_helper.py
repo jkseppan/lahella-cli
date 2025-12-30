@@ -5,16 +5,16 @@ Shared authentication helper for lahella.fi automation.
 Handles token refresh and session management.
 """
 
-import re
 import sys
-import time
 from pathlib import Path
 
 import httpx
+from filelock import FileLock
 from ruamel.yaml import YAML
 
 
 AUTH_FILE = Path(__file__).parent / "auth.yaml"
+AUTH_LOCK_FILE = AUTH_FILE.with_suffix(".yaml.lock")
 BASE_URL = "https://hallinta.lahella.fi"
 
 
@@ -55,18 +55,24 @@ def cookies_to_string(cookies: dict) -> str:
 
 
 def update_cookies_in_file(cookies: dict) -> None:
-    """Update the cookies in auth.yaml."""
+    """Update the cookies in auth.yaml.
+
+    Uses file locking to prevent race conditions when multiple processes
+    try to update the file concurrently.
+    """
     cookie_str = cookies_to_string(cookies)
 
-    yaml = YAML()
-    yaml.preserve_quotes = True
-    with open(AUTH_FILE) as f:
-        config = yaml.load(f)
+    lock = FileLock(AUTH_LOCK_FILE, timeout=10)
+    with lock:
+        yaml = YAML()
+        yaml.preserve_quotes = True
+        with open(AUTH_FILE) as f:
+            config = yaml.load(f)
 
-    config["auth"]["cookies"] = cookie_str
+        config["auth"]["cookies"] = cookie_str
 
-    with open(AUTH_FILE, "w") as f:
-        yaml.dump(config, f)
+        with open(AUTH_FILE, "w") as f:
+            yaml.dump(config, f)
 
     print("Updated cookies in auth.yaml")
 
@@ -94,13 +100,11 @@ def try_refresh_token(session: httpx.Client) -> bool:
             if result.get("status") == "Success":
                 print("Token refreshed successfully")
 
-                # Extract updated cookies from session
                 updated_cookies = {}
                 for cookie in session.cookies.jar:
                     if any(x in cookie.name for x in ["AUTH_TOKEN", "REFRESH_TOKEN", "EXP_"]):
                         updated_cookies[cookie.name] = cookie.value
 
-                # Save to file if we got new cookies
                 if updated_cookies:
                     update_cookies_in_file(updated_cookies)
 
@@ -134,7 +138,6 @@ def get_authenticated_session(auto_refresh: bool = True) -> httpx.Client:
         "Origin": BASE_URL,
     })
 
-    # Test authentication by checking a protected endpoint
     if auto_refresh:
         test_url = f"{BASE_URL}/v1/activities"
         try:
@@ -143,7 +146,6 @@ def get_authenticated_session(auto_refresh: bool = True) -> httpx.Client:
             if response.status_code == 401:
                 print("Auth token expired, attempting refresh...")
                 if try_refresh_token(session):
-                    # Reload cookies after refresh
                     auth_config = load_auth_config()
                     cookies = parse_cookies(auth_config["cookies"])
                     session.cookies.clear()
@@ -158,11 +160,9 @@ def get_authenticated_session(auto_refresh: bool = True) -> httpx.Client:
 
 
 if __name__ == "__main__":
-    # Test the auth helper
     print("Testing authentication...")
     session = get_authenticated_session()
 
-    # Try a simple API call
     response = session.get(f"{BASE_URL}/v1/activities", params={"limit": 1})
     print(f"Status: {response.status_code}")
 

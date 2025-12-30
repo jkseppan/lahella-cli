@@ -10,6 +10,7 @@ The user must be logged in via browser and provide auth cookies in auth.yaml.
 
 import argparse
 import json
+import mimetypes
 import sys
 from pathlib import Path
 
@@ -64,7 +65,15 @@ def list_courses(config: dict) -> None:
 
 
 def upload_image_for_course(session: httpx.Client, auth: dict, image_path: Path) -> str:
-    """Upload an image and return the file ID."""
+    """Upload an image and return the file ID.
+
+    Raises:
+        FileNotFoundError: If image_path does not exist.
+        httpx.HTTPStatusError: If the upload fails.
+    """
+    if not image_path.exists():
+        raise FileNotFoundError(f"Image not found: {image_path}")
+
     group_id = auth["group_id"]
     url = f"{BASE_URL}/v1/files"
     params = {
@@ -72,8 +81,10 @@ def upload_image_for_course(session: httpx.Client, auth: dict, image_path: Path)
         "cacheControl": "public, max-age=3600, s-maxage=3600",
     }
 
+    mime_type = mimetypes.guess_type(image_path)[0] or "image/jpeg"
+
     with open(image_path, "rb") as f:
-        files = {"file": (image_path.name, f, "image/jpeg")}
+        files = {"file": (image_path.name, f, mime_type)}
         response = session.post(url, params=params, files=files)
 
     response.raise_for_status()
@@ -87,7 +98,6 @@ def build_activity_payload(course: dict, auth: dict, photo_id: str | None) -> di
     transformer = Transformer()
     payload = transformer.yaml_to_api(course, group_id=auth["group_id"])
 
-    # Add photo if uploaded
     if photo_id:
         payload["traits"]["photo"] = photo_id
         payload["traits"]["photoAlt"] = course.get("image", {}).get("alt", "")
@@ -95,7 +105,7 @@ def build_activity_payload(course: dict, auth: dict, photo_id: str | None) -> di
     return payload
 
 
-def create_activity(session: httpx.Session, payload: dict) -> dict:
+def create_activity(session: httpx.Client, payload: dict) -> dict:
     """Create the activity via API."""
     url = f"{BASE_URL}/v1/activities"
     headers = {"Content-Type": "application/json"}
@@ -144,12 +154,10 @@ def main():
 
     config = load_courses(args.config)
 
-    # List courses mode
     if args.list:
         list_courses(config)
         return
 
-    # Find the course to create
     if not args.course:
         print("Error: Please specify a course with --course TITLE")
         print()
@@ -163,22 +171,19 @@ def main():
         list_courses(config)
         sys.exit(1)
 
+    assert course is not None  # type narrowing: sys.exit() above never returns
+
     print(f"Creating course: {course['title']['fi']}")
 
-    # Load auth config
     auth = load_auth_config()
-
-    # Get authenticated session (will auto-refresh token if needed)
     session = get_authenticated_session(auto_refresh=True)
     session.headers.update({
         "Referer": f"{BASE_URL}/activities?_key=new&type=hobby",
     })
 
-    # Test authentication in dry-run mode
     if args.dry_run:
         print("Authentication successful!\n")
 
-    # Upload image if configured
     photo_id = None
     image_config = course.get("image", {})
     if image_config.get("path"):
@@ -192,7 +197,6 @@ def main():
         else:
             print(f"Warning: Image not found: {image_path}")
 
-    # Build payload
     payload = build_activity_payload(course, auth, photo_id)
 
     if args.dry_run:
@@ -200,7 +204,6 @@ def main():
         print(json.dumps(payload, indent=2, ensure_ascii=False))
         return
 
-    # Create the activity
     print("Creating activity...")
     result = create_activity(session, payload)
 
