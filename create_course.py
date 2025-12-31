@@ -3,7 +3,7 @@
 Create a course listing on lahella.fi using their API.
 
 Usage:
-    python create_course.py courses.yaml [--course TITLE]
+    python create_course.py events.yaml [--course TITLE]
 
 The user must be logged in via browser and provide auth cookies in auth.yaml.
 """
@@ -34,7 +34,7 @@ def load_courses(courses_path: Path) -> dict:
 
 def get_course_by_title(config: dict, title: str) -> dict | None:
     """Find a course by its Finnish title (partial match) or by index (1-based)."""
-    courses = config.get("courses", [])
+    courses = config.get("events", [])
 
     # Try numeric index first (1-based)
     if title.isdigit():
@@ -59,7 +59,7 @@ def get_course_by_title(config: dict, title: str) -> dict | None:
 def list_courses(config: dict) -> None:
     """Print all available courses."""
     print("Available courses:")
-    for i, course in enumerate(config.get("courses", []), 1):
+    for i, course in enumerate(config.get("events", []), 1):
         title = course.get("title", {}).get("fi", "Untitled")
         print(f"  {i}. {title}")
 
@@ -128,8 +128,8 @@ def main():
         "config",
         type=Path,
         nargs="?",
-        default=Path(__file__).parent / "courses.yaml",
-        help="Path to YAML configuration file (default: courses.yaml)",
+        default=Path(__file__).parent / "events.yaml",
+        help="Path to YAML configuration file (default: events.yaml)",
     )
     parser.add_argument(
         "--course", "-c",

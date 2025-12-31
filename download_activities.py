@@ -20,79 +20,84 @@ from ruamel.yaml.comments import CommentedMap, CommentedSeq, merge_attrib
 from ruamel.yaml.mergevalue import MergeValue
 
 from auth_helper import get_authenticated_session, load_auth_config, BASE_URL
-from field_mapping import Transformer, normalize_text, html_texts_equal
+from field_mapping import Transformer, html_texts_equal
 
 
-COURSES_FILE = Path(__file__).parent / "courses.yaml"
+EVENTS_FILE = Path(__file__).parent / "events.yaml"
 
 
 class TemplateMatcher:
-    """Matches downloaded data against templates from courses.yaml."""
+    """Matches downloaded data against templates from events.yaml."""
 
-    def __init__(self, courses_file: Path = COURSES_FILE):
+    def __init__(self, events_file: Path = EVENTS_FILE):
         self.defaults = {}
-        self.anchors = {}  # name -> CommentedMap with anchor
-        self._load_defaults(courses_file)
+        self.anchors: dict[str, CommentedMap] = {}  # anchor_name -> CommentedMap
+        self.events_key: str = "events"  # root key for events list
+        self._template_defaults: CommentedMap | None = None
+        self._load_defaults(events_file)
 
-    def _load_defaults(self, courses_file: Path) -> None:
-        """Load defaults section from courses.yaml."""
-        if not courses_file.exists():
+    def _load_defaults(self, events_file: Path) -> None:
+        """Load defaults section from events.yaml."""
+        if not events_file.exists():
             return
 
         yaml = YAML()
-        with open(courses_file) as f:
+        with open(events_file) as f:
             config = yaml.load(f)
 
         defaults = config.get("defaults", {})
         self.defaults = defaults
+        self._template_defaults = defaults  # store for output
 
-        self._extract_templates(defaults)
+        self._extract_all_anchors(defaults)
 
-    def _extract_templates(self, defaults: dict) -> None:
-        """Extract templates we can match against."""
-        if "course" in defaults:
-            self.anchors["course_defaults"] = defaults["course"]
+    def get_template_defaults(self) -> CommentedMap:
+        """Return the template's defaults structure for use in output."""
+        if self._template_defaults is None:
+            return CommentedMap()
+        # Ensure all anchors are set to always_dump for output
+        self._ensure_anchors_dump(self._template_defaults)
+        return self._template_defaults
 
-        if "location" in defaults:
-            self.anchors["location_defaults"] = defaults["location"]
+    def _ensure_anchors_dump(self, obj) -> None:
+        """Recursively ensure all anchors have always_dump=True."""
+        if hasattr(obj, 'anchor') and obj.anchor and obj.anchor.value:
+            obj.yaml_set_anchor(obj.anchor.value, always_dump=True)
+        if isinstance(obj, dict):
+            for value in obj.values():
+                self._ensure_anchors_dump(value)
+        elif isinstance(obj, list):
+            for item in obj:
+                self._ensure_anchors_dump(item)
 
-        if "schedule" in defaults:
-            self.anchors["schedule_defaults"] = defaults["schedule"]
+    def _get_anchor_name(self, obj) -> str | None:
+        """Get the anchor name from a ruamel.yaml object if it has one."""
+        if hasattr(obj, 'anchor') and obj.anchor and obj.anchor.value:
+            return obj.anchor.value
+        return None
 
-        if "pricing" in defaults:
-            if "paid" in defaults["pricing"]:
-                self.anchors["pricing_paid"] = defaults["pricing"]["paid"]
-            if "free" in defaults["pricing"]:
-                self.anchors["pricing_free"] = defaults["pricing"]["free"]
+    def _extract_all_anchors(self, obj, path: str = "") -> None:
+        """
+        Recursively extract all anchors from the defaults structure.
 
-        if "text" in defaults:
-            text = defaults["text"]
-            for key in ["course_summary", "course_description", "harjoitus_summary",
-                        "harjoitus_description", "ulko_description"]:
-                if key in text:
-                    if key == "course_summary":
-                        self.anchors["summary_kurssi"] = text[key]
-                    elif key == "course_description":
-                        self.anchors["description_kurssi"] = text[key]
-                    elif key == "harjoitus_summary":
-                        self.anchors["summary_harjoitus"] = text[key]
-                    elif key == "harjoitus_description":
-                        self.anchors["description_harjoitus"] = text[key]
-                    elif key == "ulko_description":
-                        self.anchors["description_ulko"] = text[key]
+        Preserves the actual anchor names from the YAML file.
+        """
+        anchor_name = self._get_anchor_name(obj)
+        if anchor_name:
+            self.anchors[anchor_name] = obj
 
-        if "registration" in defaults and "harjoitus" in defaults["registration"]:
-            self.anchors["registration_harjoitus"] = defaults["registration"]["harjoitus"]
-
-        if "contacts" in defaults:
-            if "www" in defaults["contacts"]:
-                self.anchors["contacts_www"] = defaults["contacts"]["www"]
-            if "harjoitus" in defaults["contacts"]:
-                self.anchors["contacts_harjoitus"] = defaults["contacts"]["harjoitus"]
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                new_path = f"{path}.{key}" if path else key
+                self._extract_all_anchors(value, new_path)
+        elif isinstance(obj, list):
+            for i, item in enumerate(obj):
+                new_path = f"{path}[{i}]"
+                self._extract_all_anchors(item, new_path)
 
     def _texts_match(self, text1: str | dict, text2: str | dict) -> bool:
         """
-        Check if two text values match semantically.
+        Check if two text values match.
 
         For HTML strings, compares the extracted text content, ignoring
         HTML structure differences (tag attributes, whitespace between tags).
@@ -106,11 +111,11 @@ class TemplateMatcher:
         elif isinstance(text1, str) and isinstance(text2, str):
             if "<" in text1 or "<" in text2:
                 return html_texts_equal(text1, text2)
-            return normalize_text(text1) == normalize_text(text2)
+            return text1 == text2
         return False
 
     def _values_match(self, val1, val2) -> bool:
-        """Check if two values match (deep comparison with set equality for lists)."""
+        """Check if two values match (deep comparison)."""
         if isinstance(val1, dict) and isinstance(val2, dict):
             if set(val1.keys()) != set(val2.keys()):
                 return False
@@ -118,65 +123,205 @@ class TemplateMatcher:
         if isinstance(val1, (list, CommentedSeq)) and isinstance(val2, (list, CommentedSeq)):
             if len(val1) != len(val2):
                 return False
-            return set(val1) == set(val2)
+            # Try set comparison for hashable items, fall back to order-independent comparison
+            return sorted(val1) == sorted(val2)
         return val1 == val2
 
-    def find_matching_anchor(self, field: str, value) -> str | None:
-        """Find an anchor that matches the given value for a field."""
-        field_anchors = {
-            "summary": ["summary_kurssi", "summary_harjoitus"],
-            "description": ["description_kurssi", "description_harjoitus", "description_ulko"],
-            "pricing": ["pricing_paid", "pricing_free"],
-            "registration": ["registration_harjoitus"],
-            "contacts": ["contacts_www", "contacts_harjoitus"],
-        }
+    def try_match_any_anchor(self, value) -> CommentedMap | None:
+        """
+        Try to match value against any known anchor.
 
-        for anchor_name in field_anchors.get(field, []):
-            if anchor_name not in self.anchors:
+        Returns the anchor object if a match is found, None otherwise.
+        """
+        if not isinstance(value, dict) or not value:
+            return None
+
+        # Check if this looks like translatable text (has language keys)
+        is_text = set(value) <= {"fi", "en", "sv"}
+
+        for _anchor_name, anchor_obj in self.anchors.items():
+            if not isinstance(anchor_obj, dict):
                 continue
-            anchor_val = self.anchors[anchor_name]
 
-            if field in ("summary", "description"):
-                if self._texts_match(value, anchor_val):
-                    return anchor_name
+            if is_text:
+                if self._texts_match(value, anchor_obj):
+                    return anchor_obj
             else:
-                if self._values_match(value, anchor_val):
-                    return anchor_name
+                if self._values_match(value, anchor_obj):
+                    return anchor_obj
+
         return None
 
-    def matches_course_defaults(self, course: dict) -> bool:
-        """Check if course matches course_defaults for merge key."""
-        if "course_defaults" not in self.anchors:
-            return False
-        defaults = self.anchors["course_defaults"]
+    def apply_anchors(self, obj):
+        """
+        Recursively walk an object and replace matching values with anchor refs.
 
-        req_locales = course.get("required_locales", [])
-        def_locales = defaults.get("required_locales", [])
-        return all([
-            course.get("type") == defaults.get("type"),
-            self._values_match(req_locales, def_locales),
-            self._values_match(course.get("categories", {}), defaults.get("categories", {})),
-            self._values_match(course.get("demographics", {}), defaults.get("demographics", {})),
-        ])
+        Returns a new object with anchor references where matches are found.
+        Preserves merge keys (<<: *anchor) from the original object.
+        """
+        if isinstance(obj, dict):
+            result = CommentedMap()
+            # Preserve merge key if present
+            if hasattr(obj, merge_attrib):
+                setattr(result, merge_attrib, getattr(obj, merge_attrib))
+            for key, value in obj.items():
+                # Try to match this value to an anchor
+                anchor_obj = self.try_match_any_anchor(value)
+                if anchor_obj is not None:
+                    result[key] = anchor_obj
+                elif isinstance(value, (dict, list)):
+                    result[key] = self.apply_anchors(value)
+                else:
+                    result[key] = value
+            return result
+        elif isinstance(obj, list):
+            result = CommentedSeq()
+            for item in obj:
+                anchor_obj = self.try_match_any_anchor(item)
+                if anchor_obj is not None:
+                    result.append(anchor_obj)
+                elif isinstance(item, (dict, list)):
+                    result.append(self.apply_anchors(item))
+                else:
+                    result.append(item)
+            return result
+        return obj
 
-    def matches_location_defaults(self, location: dict) -> bool:
-        """Check if location matches location_defaults."""
-        if "location_defaults" not in self.anchors:
-            return False
-        defaults = self.anchors["location_defaults"]
-        address = location.get("address", {})
-        def_address = defaults.get("address", {})
+    def find_partial_match(
+            self, obj: dict, skip_fields: set | None = None
+    ) -> tuple[CommentedMap | None, dict, set]:
+        """
+        Find the best anchor for partial matching (merge key usage).
 
-        loc_access = location.get("accessibility", [])
-        def_access = defaults.get("accessibility", [])
-        return all([
-            location.get("type") == defaults.get("type"),
-            set(location.get("regions", [])) == set(defaults.get("regions", [])),
-            self._values_match(loc_access, def_access),
-            address.get("city") == def_address.get("city"),
-            address.get("state") == def_address.get("state"),
-            address.get("country") == def_address.get("country"),
-        ])
+        Returns (anchor_object, overrides, matched_fields) or (None, {}, set()).
+
+        An anchor is a candidate if:
+        1. If anchor has 'type', obj must have matching 'type'
+        2. Using the merge key provides net benefit (matches > overrides)
+        """
+        if not isinstance(obj, dict) or not obj:
+            return None, {}, set()
+
+        if skip_fields is None:
+            skip_fields = set()
+
+        # Skip text-like objects (only have language keys)
+        if set(obj.keys()) <= {"fi", "en", "sv"}:
+            return None, {}, set()
+
+        best_anchor = None
+        best_overrides = {}
+        best_matched = set()
+        best_score = 0
+
+        for _anchor_name, anchor_obj in self.anchors.items():
+            if not isinstance(anchor_obj, dict):
+                continue
+
+            # Skip text-like anchors
+            if set(anchor_obj.keys()) <= {"fi", "en", "sv"}:
+                continue
+
+            # If anchor has 'type', require matching type
+            if "type" in anchor_obj and obj.get("type") != anchor_obj.get("type"):
+                continue
+
+            matched, overrides = self._calculate_partial_match(obj, anchor_obj, skip_fields)
+            score = len(matched) - len(overrides)
+
+            if score > best_score:
+                best_score = score
+                best_anchor = anchor_obj
+                best_overrides = overrides
+                best_matched = matched
+
+        if best_score > 0:
+            return best_anchor, best_overrides, best_matched
+        return None, {}, set()
+
+    def _calculate_partial_match(
+            self, obj: dict, anchor: dict, skip_fields: set
+    ) -> tuple[set, dict]:
+        """
+        Calculate which fields match and which need overriding.
+
+        Returns (matched_fields, overrides_dict).
+        Only counts as match if field exists in BOTH anchor and obj with same value.
+        """
+        matched = set()
+        overrides = {}
+
+        for key, anchor_val in anchor.items():
+            if key in skip_fields:
+                continue
+            if key not in obj:
+                # Anchor has field obj doesn't - using merge would add unwanted field
+                continue
+            if self._values_match(obj.get(key), anchor_val):
+                matched.add(key)
+            else:
+                overrides[key] = obj[key]
+
+        return matched, overrides
+
+    def apply_partial_matching(self, obj, skip_fields: tuple | None = None):
+        """
+        Recursively apply merge keys for partial matches throughout object tree.
+
+        Skip_fields are preserved in output but not considered for matching.
+        """
+        if skip_fields is None:
+            skip_fields = ("_key", "_status", "title")
+
+        if isinstance(obj, dict):
+            anchor, overrides, matched = self.find_partial_match(obj, set(skip_fields))
+
+            if anchor is not None:
+                result = CommentedMap()
+
+                for key in skip_fields:
+                    if key in obj:
+                        result[key] = obj[key]
+
+                set_merge_key(result, anchor)
+
+                for key, value in overrides.items():
+                    if isinstance(value, (dict, list)):
+                        result[key] = self.apply_partial_matching(value, skip_fields=())
+                    else:
+                        result[key] = value
+
+                for key in obj:
+                    if key in skip_fields or key in matched or key in overrides:
+                        continue
+                    value = obj[key]
+                    if isinstance(value, (dict, list)):
+                        result[key] = self.apply_partial_matching(value, skip_fields=())
+                    else:
+                        result[key] = value
+
+                return result
+
+            result = CommentedMap()
+            if hasattr(obj, merge_attrib):
+                setattr(result, merge_attrib, getattr(obj, merge_attrib))
+            for key, value in obj.items():
+                if isinstance(value, (dict, list)):
+                    result[key] = self.apply_partial_matching(value, skip_fields=())
+                else:
+                    result[key] = value
+            return result
+
+        elif isinstance(obj, list):
+            result = CommentedSeq()
+            for item in obj:
+                if isinstance(item, (dict, list)):
+                    result.append(self.apply_partial_matching(item, skip_fields=()))
+                else:
+                    result.append(item)
+            return result
+
+        return obj
 
 
 def fetch_activities(session, group_id: str, limit: int = 100, skip: int = 0) -> dict:
@@ -274,217 +419,23 @@ def set_merge_key(target: CommentedMap, source: CommentedMap, position: int = 0)
     setattr(target, merge_attrib, mv)
 
 
-def apply_template_matching(courses: list, matcher: TemplateMatcher) -> tuple[CommentedMap, list]:
+def apply_template_matching(events: list, matcher: TemplateMatcher) -> tuple[CommentedMap, list]:
     """
-    Apply template matching to courses and return structure with anchors/aliases.
+    Apply template matching to events and return structure with anchors/aliases.
 
     Returns:
-        (defaults_section, courses_list) - defaults with anchors, courses with aliases
+        (defaults_section, events_list) - defaults with anchors, events with aliases
     """
-    from ruamel.yaml.comments import CommentedMap, CommentedSeq
+    defaults = matcher.get_template_defaults()
+    processed_events = CommentedSeq()
 
-    defaults = CommentedMap()
+    for event in events:
+        # Apply partial matching (merge keys) then exact matching (aliases)
+        cm = matcher.apply_partial_matching(event)
+        cm = matcher.apply_anchors(cm)
+        processed_events.append(cm)
 
-    course_def = CommentedMap()
-    course_def["type"] = "hobby"
-    course_def["required_locales"] = ["fi", "en"]
-    course_def["categories"] = CommentedMap({
-        "themes": ["ht_hyvinvointi", "ht_urheilu"],
-        "formats": ["hm_harrastukset"],
-        "locales": ["fi-FI"],
-    })
-    course_def["demographics"] = CommentedMap({
-        "age_groups": ["ageGroup/range:18-29", "ageGroup/range:30-64", "ageGroup/range:65-99"],
-        "gender": ["gender/gender"],
-    })
-    course_def.yaml_set_anchor("course_defaults", always_dump=True)
-    defaults["course"] = course_def
-
-    loc_def = CommentedMap()
-    loc_def["type"] = "place"
-    loc_def["regions"] = ["city/FI/Helsinki", "city/FI/Espoo", "city/FI/Vantaa"]
-    loc_def["accessibility"] = ["ac_unknow"]
-    loc_def["address"] = CommentedMap({
-        "city": "Helsinki",
-        "state": "Uusimaa",
-        "country": "FI",
-        "zoom": 16,
-    })
-    loc_def.yaml_set_anchor("location_defaults", always_dump=True)
-    defaults["location"] = loc_def
-
-    sched_def = CommentedMap({"timezone": "Europe/Helsinki"})
-    sched_def.yaml_set_anchor("schedule_defaults", always_dump=True)
-    defaults["schedule"] = sched_def
-
-    pricing_section = CommentedMap()
-    pricing_paid = CommentedMap({"type": "paid"})
-    pricing_paid.yaml_set_anchor("pricing_paid", always_dump=True)
-    pricing_section["paid"] = pricing_paid
-    pricing_free = CommentedMap({"type": "free"})
-    pricing_free.yaml_set_anchor("pricing_free", always_dump=True)
-    pricing_section["free"] = pricing_free
-    defaults["pricing"] = pricing_section
-
-    processed_courses = CommentedSeq()
-
-    for course in courses:
-        cm = CommentedMap()
-
-        if "_key" in course:
-            cm["_key"] = course["_key"]
-        if "_status" in course:
-            cm["_status"] = course["_status"]
-        cm["title"] = course.get("title", {})
-
-        if matcher.matches_course_defaults(course):
-            set_merge_key(cm, course_def)
-        else:
-            if "type" in course:
-                cm["type"] = course["type"]
-            if "required_locales" in course:
-                cm["required_locales"] = list(course["required_locales"])
-            if "categories" in course:
-                cm["categories"] = dict(course["categories"])
-            if "demographics" in course:
-                cm["demographics"] = dict(course["demographics"])
-
-        if "summary" in course:
-            anchor = matcher.find_matching_anchor("summary", course["summary"])
-            if anchor:
-                cm.yaml_add_eol_comment(f"matches *{anchor}", "summary")
-            cm["summary"] = dict(course["summary"])
-
-        if "description" in course:
-            anchor = matcher.find_matching_anchor("description", course["description"])
-            if anchor:
-                cm.yaml_add_eol_comment(f"matches *{anchor}", "description")
-            cm["description"] = dict(course["description"])
-
-        if "location" in course:
-            loc = course["location"]
-            loc_cm = CommentedMap()
-
-            if matcher.matches_location_defaults(loc):
-                set_merge_key(loc_cm, loc_def)
-                if "address" in loc:
-                    addr = loc["address"]
-                    addr_cm = CommentedMap()
-                    if addr.get("street"):
-                        addr_cm["street"] = addr["street"]
-                    if addr.get("postal_code"):
-                        addr_cm["postal_code"] = addr["postal_code"]
-                    if "coordinates" in addr:
-                        addr_cm["coordinates"] = list(addr["coordinates"])
-                    if addr_cm:
-                        loc_cm["address"] = addr_cm
-                if "summary" in loc:
-                    loc_cm["summary"] = dict(loc["summary"])
-            else:
-                for k, v in loc.items():
-                    if isinstance(v, dict):
-                        loc_cm[k] = dict(v)
-                    elif isinstance(v, list):
-                        loc_cm[k] = list(v)
-                    else:
-                        loc_cm[k] = v
-
-            cm["location"] = loc_cm
-
-        if "schedule" in course:
-            sched = course["schedule"]
-            sched_cm = CommentedMap()
-            set_merge_key(sched_cm, sched_def)
-            if "start_date" in sched:
-                sched_cm["start_date"] = sched["start_date"]
-            if "end_date" in sched:
-                sched_cm["end_date"] = sched["end_date"]
-            if "weekly" in sched:
-                weekly_seq = CommentedSeq()
-                for w in sched["weekly"]:
-                    weekly_seq.append(dict(w))
-                sched_cm["weekly"] = weekly_seq
-            cm["schedule"] = sched_cm
-
-        if "channels" in course:
-            channels_seq = CommentedSeq()
-            for ch in course["channels"]:
-                ch_cm = CommentedMap()
-                if "location" in ch:
-                    ch_loc = ch["location"]
-                    ch_loc_cm = CommentedMap()
-                    if matcher.matches_location_defaults(ch_loc):
-                        set_merge_key(ch_loc_cm, loc_def)
-                        if "address" in ch_loc:
-                            addr = ch_loc["address"]
-                            addr_cm = CommentedMap()
-                            if addr.get("street"):
-                                addr_cm["street"] = addr["street"]
-                            if addr.get("postal_code"):
-                                addr_cm["postal_code"] = addr["postal_code"]
-                            if "coordinates" in addr:
-                                addr_cm["coordinates"] = list(addr["coordinates"])
-                            if addr_cm:
-                                ch_loc_cm["address"] = addr_cm
-                        if "summary" in ch_loc:
-                            ch_loc_cm["summary"] = dict(ch_loc["summary"])
-                    else:
-                        for k, v in ch_loc.items():
-                            if isinstance(v, dict):
-                                ch_loc_cm[k] = dict(v)
-                            elif isinstance(v, list):
-                                ch_loc_cm[k] = list(v)
-                            else:
-                                ch_loc_cm[k] = v
-                    ch_cm["location"] = ch_loc_cm
-
-                if "schedule" in ch:
-                    ch_sched = ch["schedule"]
-                    ch_sched_cm = CommentedMap()
-                    set_merge_key(ch_sched_cm, sched_def)
-                    if "start_date" in ch_sched:
-                        ch_sched_cm["start_date"] = ch_sched["start_date"]
-                    if "end_date" in ch_sched:
-                        ch_sched_cm["end_date"] = ch_sched["end_date"]
-                    if "weekly" in ch_sched:
-                        weekly_seq = CommentedSeq()
-                        for w in ch_sched["weekly"]:
-                            weekly_seq.append(dict(w))
-                        ch_sched_cm["weekly"] = weekly_seq
-                    ch_cm["schedule"] = ch_sched_cm
-
-                channels_seq.append(ch_cm)
-            cm["channels"] = channels_seq
-
-        if "pricing" in course:
-            pricing = course["pricing"]
-            pricing_type = pricing.get("type", "paid")
-            if pricing_type == "paid" and "info" not in pricing:
-                cm["pricing"] = pricing_paid
-            elif pricing_type == "free" and "info" not in pricing:
-                cm["pricing"] = pricing_free
-            else:
-                pricing_cm = CommentedMap()
-                if pricing_type == "paid":
-                    set_merge_key(pricing_cm, pricing_paid)
-                else:
-                    set_merge_key(pricing_cm, pricing_free)
-                if "info" in pricing:
-                    pricing_cm["info"] = dict(pricing["info"])
-                cm["pricing"] = pricing_cm
-
-        if "registration" in course:
-            cm["registration"] = dict(course["registration"])
-
-        if "image" in course:
-            cm["image"] = dict(course["image"])
-
-        if "contacts" in course:
-            cm["contacts"] = dict(course["contacts"])
-
-        processed_courses.append(cm)
-
-    return defaults, processed_courses
+    return defaults, processed_events
 
 
 def main():
@@ -499,7 +450,7 @@ def main():
     parser.add_argument(
         "--yaml",
         action="store_true",
-        help="Output in YAML format (matching courses.yaml schema)",
+        help="Output in YAML format (matching events.yaml schema)",
     )
     parser.add_argument(
         "--id",
@@ -514,8 +465,8 @@ def main():
     parser.add_argument(
         "--templates", "-t",
         type=Path,
-        default=COURSES_FILE,
-        help="YAML file with defaults/templates for matching (default: courses.yaml)",
+        default=EVENTS_FILE,
+        help="YAML file with defaults/templates for matching (default: events.yaml)",
     )
     args = parser.parse_args()
 
@@ -535,13 +486,13 @@ def main():
     if args.json:
         output = json.dumps(activities, indent=2, ensure_ascii=False)
     elif args.yaml:
-        courses = [convert_activity_to_yaml_schema(a) for a in activities]
+        events = [convert_activity_to_yaml_schema(a) for a in activities]
         matcher = TemplateMatcher(args.templates)
-        defaults, processed_courses = apply_template_matching(courses, matcher)
+        defaults, processed_events = apply_template_matching(events, matcher)
 
         result = CommentedMap()
         result["defaults"] = defaults
-        result["downloaded_courses"] = processed_courses
+        result[matcher.events_key] = processed_events
 
         yaml = YAML()
         yaml.default_flow_style = False
@@ -550,7 +501,7 @@ def main():
         if args.output:
             with open(args.output, "w") as f:
                 yaml.dump(result, f)
-            print(f"Wrote {len(courses)} courses to {args.output}", file=sys.stderr)
+            print(f"Wrote {len(events)} events to {args.output}", file=sys.stderr)
             return
         else:
             import io

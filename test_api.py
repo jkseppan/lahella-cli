@@ -20,7 +20,6 @@ from download_activities import (
     convert_activity_to_yaml_schema,
     get_activity_status,
     TemplateMatcher,
-    apply_template_matching,
 )
 from create_course import (
     load_courses,
@@ -198,51 +197,69 @@ def mock_auth():
 
 
 @pytest.fixture
-def sample_courses_yaml():
+def sample_events_yaml_txt():
     """Sample courses.yaml content."""
-    return {
-        "defaults": {
-            "course": {
-                "type": "hobby",
-                "required_locales": ["fi", "en"],
-                "categories": {
-                    "themes": ["ht_hyvinvointi", "ht_urheilu"],
-                    "formats": ["hm_harrastukset"],
-                    "locales": ["fi-FI"],
-                },
-                "demographics": {
-                    "age_groups": [
-                        "ageGroup/range:18-29",
-                        "ageGroup/range:30-64",
-                        "ageGroup/range:65-99",
-                    ],
-                    "gender": ["gender/gender"],
-                },
-            },
-            "location": {
-                "type": "place",
-                "regions": ["city/FI/Helsinki", "city/FI/Espoo", "city/FI/Vantaa"],
-                "accessibility": ["ac_unknow"],
-                "address": {
-                    "city": "Helsinki",
-                    "state": "Uusimaa",
-                    "country": "FI",
-                    "zoom": 16,
-                },
-            },
-        },
-        "courses": [
-            {
-                "title": {"fi": "Taiji-kurssi", "en": "Tai chi course"},
-                "type": "hobby",
-            },
-            {
-                "title": {"fi": "Jooga-kurssi", "en": "Yoga course"},
-                "type": "hobby",
-            },
-        ],
-    }
+    return """
+defaults:
+  event: &event_defaults
+    type: hobby
+    required_locales: [fi, en]
+    categories:
+      themes: [ht_hyvinvointi, ht_urheilu]
+      formats: [hm_harrastukset]
+      locales: [fi-FI]
+    demographics:
+      age_groups: [ageGroup/range:18-29, ageGroup/range:30-64, ageGroup/range:65-99]
+      gender: [gender/gender]
+  text:
+    course_summary: &summary_peruskurssi
+      fi: '<p dir="ltr">Taiji-peruskurssi</p>'
+      en: '<p dir="ltr">An elementary course in tai chi</p>'
+    course_description: &description_peruskurssi
+      fi: '<p dir="ltr">Taiji-peruskurssilla opetellaan alkeet</p>'
+      en: '<p dir="ltr">An elementary course in tai chi teaches the basics</p>'
+  address: &address_defaults
+    city: Helsinki
+    state: Uusimaa
+    country: FI
+    zoom: 16
+  location: &location_defaults
+    type: place
+    regions: [city/FI/Helsinki, city/FI/Espoo, city/FI/Vantaa]
+    accessibility: [ac_unknow]
+events:
+ - title:
+     fi: Joogakurssi
+     en: Yoga course
+ - title:
+     fi: Taiji-kurssi
+     en: Tai chi course
+   <<: *event_defaults
+   summary: *summary_peruskurssi
+   description: *description_peruskurssi
+   location:
+     <<: *location_defaults
+     address:
+       <<: *address_defaults
+       street: Myllykalliontie 3
+       postal_code: "00200"
+       coordinates: [24.87076, 60.16061]
+     summary:
+       fi: Kurssi järjestetään Lauttasaaren ala-asteella sunnuntaisin klo 11–12.
+       en: The course meets at Lauttasaari primary school on Sundays from 11am to noon.
+   schedule:
+     timezone: Europe/Helsinki
+     start_date: "2026-01-11"
+     end_date: "2026-05-24"
+     weekly:
+       - weekday: 7
+         start_time: "11:00"
+         end_time: "12:00"
+    """.lstrip()
 
+@pytest.fixture
+def sample_events_yaml(sample_events_yaml_txt):
+    return YAML().load(sample_events_yaml_txt)
 
 # =============================================================================
 # DOWNLOAD_ACTIVITIES.PY TESTS
@@ -412,81 +429,17 @@ class TestGetActivityStatus:
 class TestTemplateMatcher:
     """Tests for TemplateMatcher class."""
 
-    def test_load_defaults(self, sample_courses_yaml, tmp_path):
+    def test_load_defaults(self, sample_events_yaml_txt, tmp_path):
         """Test loading defaults from YAML file."""
-        yaml = YAML()
-        courses_file = tmp_path / "courses.yaml"
+        YAML()
+        courses_file = tmp_path / "events.yaml"
         with open(courses_file, "w") as f:
-            yaml.dump(sample_courses_yaml, f)
+            f.write(sample_events_yaml_txt)
 
         matcher = TemplateMatcher(courses_file)
 
-        assert "course_defaults" in matcher.anchors
+        assert "event_defaults" in matcher.anchors
         assert "location_defaults" in matcher.anchors
-
-    def test_matches_course_defaults(self, sample_courses_yaml, tmp_path):
-        """Test matching course against course_defaults."""
-        yaml = YAML()
-        courses_file = tmp_path / "courses.yaml"
-        with open(courses_file, "w") as f:
-            yaml.dump(sample_courses_yaml, f)
-
-        matcher = TemplateMatcher(courses_file)
-
-        course = {
-            "type": "hobby",
-            "required_locales": ["fi", "en"],
-            "categories": {
-                "themes": ["ht_hyvinvointi", "ht_urheilu"],
-                "formats": ["hm_harrastukset"],
-                "locales": ["fi-FI"],
-            },
-            "demographics": {
-                "age_groups": [
-                    "ageGroup/range:18-29",
-                    "ageGroup/range:30-64",
-                    "ageGroup/range:65-99",
-                ],
-                "gender": ["gender/gender"],
-            },
-        }
-
-        assert matcher.matches_course_defaults(course) is True
-
-    def test_does_not_match_different_type(self, sample_courses_yaml, tmp_path):
-        """Test that different type doesn't match."""
-        yaml = YAML()
-        courses_file = tmp_path / "courses.yaml"
-        with open(courses_file, "w") as f:
-            yaml.dump(sample_courses_yaml, f)
-
-        matcher = TemplateMatcher(courses_file)
-
-        course = {"type": "support"}  # Different type
-
-        assert matcher.matches_course_defaults(course) is False
-
-    def test_matches_location_defaults(self, sample_courses_yaml, tmp_path):
-        """Test matching location against location_defaults."""
-        yaml = YAML()
-        courses_file = tmp_path / "courses.yaml"
-        with open(courses_file, "w") as f:
-            yaml.dump(sample_courses_yaml, f)
-
-        matcher = TemplateMatcher(courses_file)
-
-        location = {
-            "type": "place",
-            "regions": ["city/FI/Helsinki", "city/FI/Espoo", "city/FI/Vantaa"],
-            "accessibility": ["ac_unknow"],
-            "address": {
-                "city": "Helsinki",
-                "state": "Uusimaa",
-                "country": "FI",
-            },
-        }
-
-        assert matcher.matches_location_defaults(location) is True
 
     def test_matches_html_text_semantically(self, tmp_path):
         """Test that HTML text matching ignores structural differences."""
@@ -501,7 +454,7 @@ class TestTemplateMatcher:
                 }
             }
         }
-        courses_file = tmp_path / "courses.yaml"
+        courses_file = tmp_path / "events.yaml"
         with open(courses_file, "w") as f:
             yaml.dump(courses_yaml, f)
 
@@ -531,7 +484,7 @@ class TestTemplateMatcher:
                 }
             }
         }
-        courses_file = tmp_path / "courses.yaml"
+        courses_file = tmp_path / "events.yaml"
         with open(courses_file, "w") as f:
             yaml.dump(courses_yaml, f)
 
@@ -547,27 +500,6 @@ class TestTemplateMatcher:
         ) is False
 
 
-class TestApplyTemplateMatching:
-    """Tests for apply_template_matching()."""
-
-    def test_returns_defaults_and_courses(self, sample_courses_yaml, tmp_path):
-        """Test that apply_template_matching returns correct structure."""
-        yaml = YAML()
-        courses_file = tmp_path / "courses.yaml"
-        with open(courses_file, "w") as f:
-            yaml.dump(sample_courses_yaml, f)
-
-        matcher = TemplateMatcher(courses_file)
-        courses = [
-            {"title": {"fi": "Test"}, "type": "hobby"},
-        ]
-
-        defaults, processed = apply_template_matching(courses, matcher)
-
-        assert "course" in defaults
-        assert "location" in defaults
-        assert "schedule" in defaults
-        assert len(processed) == 1
 
 
 # =============================================================================
@@ -578,53 +510,53 @@ class TestApplyTemplateMatching:
 class TestLoadCourses:
     """Tests for load_courses()."""
 
-    def test_load_valid_yaml(self, sample_courses_yaml, tmp_path):
+    def test_load_valid_yaml(self, sample_events_yaml_txt, tmp_path):
         """Test loading a valid YAML file."""
-        yaml = YAML()
-        courses_file = tmp_path / "courses.yaml"
+        YAML()
+        courses_file = tmp_path / "events.yaml"
         with open(courses_file, "w") as f:
-            yaml.dump(sample_courses_yaml, f)
+            f.write(sample_events_yaml_txt)
 
         result = load_courses(courses_file)
 
-        assert "courses" in result
-        assert len(result["courses"]) == 2
+        assert "events" in result
+        assert len(result["events"]) == 2
 
 
 class TestGetCourseByTitle:
     """Tests for get_course_by_title()."""
 
-    def test_exact_match(self, sample_courses_yaml):
+    def test_exact_match(self, sample_events_yaml):
         """Test finding course by exact title."""
-        result = get_course_by_title(sample_courses_yaml, "Taiji-kurssi")
+        result = get_course_by_title(sample_events_yaml, "Taiji-kurssi")
         assert result is not None
         assert result["title"]["fi"] == "Taiji-kurssi"
 
-    def test_partial_match(self, sample_courses_yaml):
+    def test_partial_match(self, sample_events_yaml):
         """Test finding course by partial title."""
-        result = get_course_by_title(sample_courses_yaml, "jooga")
+        result = get_course_by_title(sample_events_yaml, "jooga")
         assert result is not None
-        assert result["title"]["fi"] == "Jooga-kurssi"
+        assert result["title"]["fi"] == "Joogakurssi"
 
-    def test_case_insensitive(self, sample_courses_yaml):
+    def test_case_insensitive(self, sample_events_yaml):
         """Test case-insensitive matching."""
-        result = get_course_by_title(sample_courses_yaml, "TAIJI")
+        result = get_course_by_title(sample_events_yaml, "TAIJI")
         assert result is not None
         assert result["title"]["fi"] == "Taiji-kurssi"
 
-    def test_by_index(self, sample_courses_yaml):
+    def test_by_index(self, sample_events_yaml):
         """Test finding course by 1-based index."""
-        result = get_course_by_title(sample_courses_yaml, "1")
+        result = get_course_by_title(sample_events_yaml, "2")
         assert result is not None
         assert result["title"]["fi"] == "Taiji-kurssi"
 
-        result = get_course_by_title(sample_courses_yaml, "2")
+        result = get_course_by_title(sample_events_yaml, "1")
         assert result is not None
-        assert result["title"]["fi"] == "Jooga-kurssi"
+        assert result["title"]["fi"] == "Joogakurssi"
 
-    def test_not_found(self, sample_courses_yaml):
+    def test_not_found(self, sample_events_yaml):
         """Test returns None for non-existent course."""
-        result = get_course_by_title(sample_courses_yaml, "nonexistent")
+        result = get_course_by_title(sample_events_yaml, "nonexistent")
         assert result is None
 
 
