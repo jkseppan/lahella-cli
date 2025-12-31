@@ -13,7 +13,7 @@ from pytest_httpx import HTTPXMock
 from ruamel.yaml import YAML
 
 # Import modules under test
-from download_activities import (
+from lahella_cli.download_activities import (
     fetch_activities,
     fetch_all_activities,
     fetch_activity_by_id,
@@ -21,14 +21,14 @@ from download_activities import (
     get_activity_status,
     TemplateMatcher,
 )
-from create_course import (
+from lahella_cli.create_course import (
     load_courses,
     get_course_by_title,
     create_activity,
     update_activity,
     upload_image_for_course,
 )
-from update_payload import build_payload
+from lahella_cli.update_payload import build_payload
 
 
 # =============================================================================
@@ -681,7 +681,7 @@ class TestApplyUpdate:
 
     def test_apply_update_success(self, httpx_mock: HTTPXMock):
         """Test successful application of local changes to server."""
-        from sync_activities import apply_update
+        from lahella_cli.sync_activities import apply_update
 
         activity_id = "128867852579"
         server_activity = {
@@ -714,7 +714,7 @@ class TestApplyUpdate:
 
     def test_apply_update_preserves_channel_id(self, httpx_mock: HTTPXMock):
         """Test that channel UUIDs are preserved when applying update."""
-        from sync_activities import apply_update
+        from lahella_cli.sync_activities import apply_update
 
         activity_id = "128867852579"
         server_activity = {
@@ -789,7 +789,7 @@ class TestRoundTrip:
 
     def test_convert_and_back(self, sample_yaml_course, mock_auth):
         """Test that converting to API and back preserves key data."""
-        from field_mapping import Transformer
+        from lahella_cli.field_mapping import Transformer
 
         transformer = Transformer()
 
@@ -888,10 +888,10 @@ auth:
   cookies: "AUTH_TOKEN_X=test;REFRESH_TOKEN_X=test;EXP_X=9999999999"
 """)
 
-        from auth_helper import get_authenticated_session
+        from lahella_cli.auth_helper import get_authenticated_session
 
         # Temporarily replace AUTH_FILE
-        import auth_helper
+        import lahella_cli.auth_helper as auth_helper
         original_auth_file = auth_helper.AUTH_FILE
         auth_helper.AUTH_FILE = auth_file
 
@@ -926,9 +926,9 @@ auth:
   cookies: "AUTH_TOKEN_X=old;REFRESH_TOKEN_X=old;EXP_X=9999999999"
 """)
 
-        from auth_helper import update_cookies_in_file
+        from lahella_cli.auth_helper import update_cookies_in_file
 
-        import auth_helper
+        import lahella_cli.auth_helper as auth_helper
         original_auth_file = auth_helper.AUTH_FILE
         auth_helper.AUTH_FILE = auth_file
 

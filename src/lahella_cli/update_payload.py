@@ -6,7 +6,7 @@ This module creates API payloads for POST/PUT requests, with optional
 preservation of server-generated UUIDs for updates.
 """
 
-from field_mapping import Transformer, get_nested
+from .field_mapping import Transformer, get_nested
 
 
 def build_payload(

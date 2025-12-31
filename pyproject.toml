@@ -10,11 +10,11 @@ authors = [
 requires-python = ">=3.14"
 classifiers = [
     "Development Status :: 3 - Alpha",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.14",
 ]
 
 dependencies = [
+    "filelock>=3.16.0",
     "httpx>=0.28.1",
     "playwright>=1.57.0",
     "ruamel-yaml>=0.18.17",
@@ -27,7 +27,6 @@ Repository = "https://github.com/jkseppan/lahella-cli"
 [dependency-groups]
 dev = [
     "coverage>=7.13.1",
-    "filelock>=3.16.0",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
     "pytest-httpx>=0.35.0",
@@ -53,6 +52,13 @@ ignore = [
 ]
 allowed-confusables = ["–"]
 
+[build-system]
+requires = ["uv_build>=0.9.21,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.build]
+exclude = ["*.lock"]
+
 [tool.ty.src]
 # Exclude test files - type errors there would just cause test failures anyway
-exclude = ["test_*.py"]
+exclude = ["tests/test_*.py"]

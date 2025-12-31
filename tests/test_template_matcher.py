@@ -12,7 +12,7 @@ import pytest
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
 
-from download_activities import TemplateMatcher
+from lahella_cli.download_activities import TemplateMatcher
 
 
 # =============================================================================
@@ -206,7 +206,7 @@ class TestAliasOutput:
 
     def test_apply_template_uses_alias_for_summary(self, full_template, yaml_parser):
         """When summary matches anchor, output should use alias not inline text."""
-        from download_activities import apply_template_matching
+        from lahella_cli.download_activities import apply_template_matching
 
         matcher = TemplateMatcher(full_template)
 
@@ -257,7 +257,7 @@ class TestAliasOutput:
 
     def test_apply_template_uses_alias_for_description(self, full_template):
         """When description matches anchor, output should use alias."""
-        from download_activities import apply_template_matching
+        from lahella_cli.download_activities import apply_template_matching
 
         matcher = TemplateMatcher(full_template)
 
@@ -295,7 +295,7 @@ class TestAliasOutput:
 
     def test_apply_template_uses_merge_key_with_correct_anchor(self, full_template):
         """Merge key should use the template's anchor name, not hardcoded."""
-        from download_activities import apply_template_matching
+        from lahella_cli.download_activities import apply_template_matching
 
         matcher = TemplateMatcher(full_template)
 
@@ -340,7 +340,7 @@ class TestDefaultsStructure:
 
     def test_preserves_address_defaults_anchor(self, full_template):
         """Should preserve address_defaults as separate anchor."""
-        from download_activities import apply_template_matching
+        from lahella_cli.download_activities import apply_template_matching
 
         matcher = TemplateMatcher(full_template)
         defaults, _ = apply_template_matching([], matcher)
@@ -355,7 +355,7 @@ class TestDefaultsStructure:
 
     def test_preserves_pricing_info_anchors(self, full_template):
         """Should preserve pricing info anchors like &pricing_195."""
-        from download_activities import apply_template_matching
+        from lahella_cli.download_activities import apply_template_matching
 
         matcher = TemplateMatcher(full_template)
         defaults, _ = apply_template_matching([], matcher)
@@ -370,7 +370,7 @@ class TestDefaultsStructure:
 
     def test_preserves_image_anchors(self, full_template):
         """Should preserve image anchors like &image_kurssi."""
-        from download_activities import apply_template_matching
+        from lahella_cli.download_activities import apply_template_matching
 
         matcher = TemplateMatcher(full_template)
         defaults, _ = apply_template_matching([], matcher)
@@ -385,7 +385,7 @@ class TestDefaultsStructure:
 
     def test_preserves_nested_text_structure(self, full_template):
         """Should preserve template's text section structure with anchors."""
-        from download_activities import apply_template_matching
+        from lahella_cli.download_activities import apply_template_matching
 
         matcher = TemplateMatcher(full_template)
         defaults, _ = apply_template_matching([], matcher)

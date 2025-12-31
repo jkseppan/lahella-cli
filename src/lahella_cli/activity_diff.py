@@ -9,7 +9,7 @@ handling HTML content semantically and treating certain arrays as sets.
 from dataclasses import dataclass
 from typing import Any
 
-from field_mapping import (
+from .field_mapping import (
     html_texts_equal,
     FIELD_MAPPINGS,
     REGISTRATION_MAPPINGS,

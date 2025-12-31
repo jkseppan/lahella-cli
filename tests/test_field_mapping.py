@@ -7,7 +7,7 @@ Run with: uv run pytest test_field_mapping.py -v
 
 import pytest
 
-from field_mapping import (
+from lahella_cli.field_mapping import (
     # Helper functions
     get_nested,
     set_nested,

@@ -5,7 +5,7 @@ Test suite for update_payload.py - building update payloads for modified activit
 Run with: uv run pytest test_update_payload.py -v
 """
 
-from update_payload import build_update_payload
+from lahella_cli.update_payload import build_update_payload
 
 
 class TestBuildUpdatePayload:

@@ -19,16 +19,16 @@ from ruamel.yaml import YAML
 
 import httpx
 
-from activity_diff import diff_activities, format_diffs
-from auth_helper import get_authenticated_session, load_auth_config
-from create_course import update_activity
-from download_activities import (
+from .activity_diff import diff_activities, format_diffs
+from .auth_helper import get_authenticated_session, load_auth_config
+from .create_course import update_activity
+from .download_activities import (
     fetch_all_activities,
     fetch_activity_by_id,
     convert_activity_to_yaml_schema,
 )
-from field_mapping import normalize_text
-from update_payload import build_update_payload
+from .field_mapping import normalize_text
+from .update_payload import build_update_payload
 
 
 EVENTS_FILE = Path(__file__).parent / "events.yaml"

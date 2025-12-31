@@ -155,10 +155,11 @@ wheels = [
 ]
 
 [[package]]
-name = "lahella-automation"
+name = "lahella-cli"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
+    { name = "filelock" },
     { name = "httpx" },
     { name = "playwright" },
     { name = "ruamel-yaml" },
@@ -167,7 +168,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "coverage" },
-    { name = "filelock" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-httpx" },
@@ -177,6 +177,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "filelock", specifier = ">=3.16.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "playwright", specifier = ">=1.57.0" },
     { name = "ruamel-yaml", specifier = ">=0.18.17" },
@@ -185,7 +186,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "coverage", specifier = ">=7.13.1" },
-    { name = "filelock", specifier = ">=3.16.0" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
     { name = "pytest-httpx", specifier = ">=0.35.0" },

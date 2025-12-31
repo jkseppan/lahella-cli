@@ -6,7 +6,7 @@ Run with: uv run pytest test_activity_diff.py -v
 """
 
 
-from activity_diff import diff_activities, format_diffs, FieldDiff
+from lahella_cli.activity_diff import diff_activities, format_diffs, FieldDiff
 
 
 class TestDiffActivities:

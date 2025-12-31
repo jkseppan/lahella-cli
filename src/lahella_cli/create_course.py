@@ -17,8 +17,8 @@ from pathlib import Path
 import httpx
 from ruamel.yaml import YAML
 
-from auth_helper import get_authenticated_session, load_auth_config
-from update_payload import build_payload
+from .auth_helper import get_authenticated_session, load_auth_config
+from .update_payload import build_payload
 
 
 BASE_URL = "https://hallinta.lahella.fi"

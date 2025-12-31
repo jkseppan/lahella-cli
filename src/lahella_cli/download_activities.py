@@ -19,8 +19,8 @@ from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq, merge_attrib
 from ruamel.yaml.mergevalue import MergeValue
 
-from auth_helper import get_authenticated_session, load_auth_config, BASE_URL
-from field_mapping import Transformer, html_texts_equal
+from .auth_helper import get_authenticated_session, load_auth_config, BASE_URL
+from .field_mapping import Transformer, html_texts_equal
 
 
 EVENTS_FILE = Path(__file__).parent / "events.yaml"
