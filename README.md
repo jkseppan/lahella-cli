@@ -1,4 +1,8 @@
-# Lähellä.fi Activity Automation
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.14+](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/downloads/)
+[![Vibe-coded](https://img.shields.io/badge/Vibe-coded-c15f3c?logo=Claude&labelColor=f4f3ee)](https://x.com/i/trending/2006300642797625572)
+
+# lahella-cli: Lähellä.fi Activity Automation
 
 Automate creating and updating activity listings on [Lähellä.fi](https://lahella.fi)
 using YAML configuration files.
@@ -47,14 +51,19 @@ What you get:
 - **Automation** - Eliminate repetitive clicking through the web interface
 - **Consistency** - Define templates for common patterns (locations, schedules, pricing) and reuse them across activities
 
+## Caveats
+
+This is version 0.1, mainly vibe-coded, it worked for me once!
+Please take backups of your lähellä.fi data before using this alpha software.
+
 ## Installation
 
 1. **Install uv** - I mean, everyone has done this in 2025, but see instructions at <https://docs.astral.sh/uv/getting-started/installation/>
 
 2. **Clone or download this repository:**
    ```bash
-   git clone <repository-url>
-   cd <directory>
+   git clone https://github.com/jkseppan/lahella-cli.git
+   cd lahella-cli
    ```
 
 3. **Install dependencies:**
