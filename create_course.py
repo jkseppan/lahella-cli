@@ -18,7 +18,7 @@ import httpx
 from ruamel.yaml import YAML
 
 from auth_helper import get_authenticated_session, load_auth_config
-from field_mapping import Transformer
+from update_payload import build_payload
 
 
 BASE_URL = "https://hallinta.lahella.fi"
@@ -91,18 +91,6 @@ def upload_image_for_course(session: httpx.Client, auth: dict, image_path: Path)
     result = response.json()
     print(f"Uploaded image: {result.get('_key', 'unknown')}")
     return result["_key"]
-
-
-def build_activity_payload(course: dict, auth: dict, photo_id: str | None) -> dict:
-    """Build the activity JSON payload from course data using Transformer."""
-    transformer = Transformer()
-    payload = transformer.yaml_to_api(course, group_id=auth["group_id"])
-
-    if photo_id:
-        payload["traits"]["photo"] = photo_id
-        payload["traits"]["photoAlt"] = course.get("image", {}).get("alt", "")
-
-    return payload
 
 
 def create_activity(session: httpx.Client, payload: dict) -> dict:
@@ -197,7 +185,7 @@ def main():
         else:
             print(f"Warning: Image not found: {image_path}")
 
-    payload = build_activity_payload(course, auth, photo_id)
+    payload = build_payload(course, auth["group_id"], photo_id)
 
     if args.dry_run:
         print("\n=== DRY RUN - Would send this payload ===\n")

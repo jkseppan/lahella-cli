@@ -24,10 +24,10 @@ from download_activities import (
 from create_course import (
     load_courses,
     get_course_by_title,
-    build_activity_payload,
     create_activity,
     upload_image_for_course,
 )
+from update_payload import build_payload
 
 
 # =============================================================================
@@ -560,12 +560,12 @@ class TestGetCourseByTitle:
         assert result is None
 
 
-class TestBuildActivityPayload:
-    """Tests for build_activity_payload()."""
+class TestBuildPayload:
+    """Tests for build_payload()."""
 
     def test_basic_payload(self, sample_yaml_course, mock_auth):
         """Test building basic payload from course."""
-        result = build_activity_payload(sample_yaml_course, mock_auth, None)
+        result = build_payload(sample_yaml_course, mock_auth["group_id"], None)
 
         assert result["group"] == "test-group-123"
         assert "traits" in result
@@ -576,14 +576,14 @@ class TestBuildActivityPayload:
         """Test payload includes photo when provided."""
         sample_yaml_course["image"] = {"alt": "Test image"}
 
-        result = build_activity_payload(sample_yaml_course, mock_auth, "photo-123")
+        result = build_payload(sample_yaml_course, mock_auth["group_id"], "photo-123")
 
         assert result["traits"]["photo"] == "photo-123"
         assert result["traits"]["photoAlt"] == "Test image"
 
     def test_channels_created(self, sample_yaml_course, mock_auth):
         """Test that channels are created from location/schedule."""
-        result = build_activity_payload(sample_yaml_course, mock_auth, None)
+        result = build_payload(sample_yaml_course, mock_auth["group_id"], None)
 
         assert "channels" in result["traits"]
         assert len(result["traits"]["channels"]) == 1
@@ -730,7 +730,7 @@ class TestEndToEndCreate:
         )
 
         # Build payload
-        payload = build_activity_payload(sample_yaml_course, mock_auth, None)
+        payload = build_payload(sample_yaml_course, mock_auth["group_id"], None)
 
         # Create activity
         with httpx.Client() as client:
