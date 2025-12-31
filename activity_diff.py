@@ -95,6 +95,100 @@ IGNORED_FIELDS = {
     "_status",
 }
 
+# Server-generated fields: ignore if they only exist on server (local_value is None)
+# These use suffix matching (endswith)
+SERVER_GENERATED_SUFFIXES = {
+    ".coordinates",
+    ".zoom",
+}
+
+
+def _is_server_generated_field(path: str) -> bool:
+    """Check if a field path matches a server-generated field pattern."""
+    return any(path.endswith(suffix) for suffix in SERVER_GENERATED_SUFFIXES)
+
+
+def _filter_geocoded_coordinates(
+    diffs: list[FieldDiff],
+    local_flat: dict[str, Any],
+    server_flat: dict[str, Any],
+) -> list[FieldDiff]:
+    """
+    Filter out coordinate diffs when street address is present.
+
+    Server geocodes street addresses and overrides coordinates.
+    Only report coordinate diffs when street is null (user can drag marker).
+    """
+    filtered = []
+    for diff in diffs:
+        if not diff.path.endswith(".coordinates"):
+            filtered.append(diff)
+            continue
+
+        # Get the street field path (replace .coordinates with .street)
+        street_path = diff.path.replace(".coordinates", ".street")
+
+        # Check if either local or server has a street address
+        local_street = local_flat.get(street_path)
+        server_street = server_flat.get(street_path)
+
+        # If either side has a street address, server will geocode it
+        # So ignore coordinate differences (user can't control them)
+        if local_street or server_street:
+            continue
+
+        # No street address on either side - coordinates are user-controlled
+        filtered.append(diff)
+
+    return filtered
+
+
+def _strip_server_only_fields(local_obj: Any, server_obj: Any) -> tuple[Any, Any]:
+    """
+    Strip server-generated fields from server that don't exist in local.
+
+    Returns (local_stripped, server_stripped) where server has coordinates/zoom
+    removed only if local doesn't have them.
+    """
+    if isinstance(local_obj, dict) and isinstance(server_obj, dict):
+        local_result = {}
+        server_result = {}
+        all_keys = set(local_obj.keys()) | set(server_obj.keys())
+
+        for key in all_keys:
+            local_val = local_obj.get(key)
+            server_val = server_obj.get(key)
+
+            # Skip server-only generated fields
+            if key in ("coordinates", "zoom") and key not in local_obj:
+                continue
+
+            if local_val is not None and server_val is not None:
+                local_stripped, server_stripped = _strip_server_only_fields(
+                    local_val, server_val
+                )
+                local_result[key] = local_stripped
+                server_result[key] = server_stripped
+            elif local_val is not None:
+                local_result[key] = local_val
+            elif server_val is not None:
+                server_result[key] = server_val
+
+        return local_result, server_result
+
+    if isinstance(local_obj, list) and isinstance(server_obj, list):
+        if len(local_obj) != len(server_obj):
+            return local_obj, server_obj
+        local_result = []
+        server_result = []
+        for local_item, server_item in zip(local_obj, server_obj, strict=False):
+            l_stripped, s_stripped = _strip_server_only_fields(local_item, server_item)
+            local_result.append(l_stripped)
+            server_result.append(s_stripped)
+        return local_result, server_result
+
+    return local_obj, server_obj
+
 
 def diff_activities(
     local: dict,
@@ -114,8 +208,11 @@ def diff_activities(
     """
     diffs: list[FieldDiff] = []
 
-    local_flat = _flatten_dict(local)
-    server_flat = _flatten_dict(server)
+    # Strip server-only generated fields for fair comparison
+    local_stripped, server_stripped = _strip_server_only_fields(local, server)
+
+    local_flat = _flatten_dict(local_stripped)
+    server_flat = _flatten_dict(server_stripped)
 
     all_paths = set(local_flat.keys()) | set(server_flat.keys())
 
@@ -125,6 +222,10 @@ def diff_activities(
 
         local_val = local_flat.get(path)
         server_val = server_flat.get(path)
+
+        # Skip server-generated fields that don't exist locally
+        if local_val is None and _is_server_generated_field(path):
+            continue
 
         if not _compare_values(path, local_val, server_val):
             diffs.append(FieldDiff(
@@ -139,6 +240,10 @@ def diff_activities(
     server_image_id = server_flat.get("image.id")
     if local_image_id and server_image_id and local_image_id == server_image_id:
         diffs = [d for d in diffs if d.path != "image.path"]
+
+    # Filter out coordinate diffs when street address is present
+    # (server geocodes street addresses and overrides coordinates)
+    diffs = _filter_geocoded_coordinates(diffs, local_flat, server_flat)
 
     return diffs
 

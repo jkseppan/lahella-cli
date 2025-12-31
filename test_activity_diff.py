@@ -419,3 +419,264 @@ class TestImageHandling:
         paths = {d.path for d in diffs}
         assert "image.path" in paths
         assert "image.id" in paths
+
+
+class TestGeocodedCoordinates:
+    """Tests for filtering geocoded coordinates (when street address is present)."""
+
+    def test_ignores_coordinates_when_street_present_in_local(self):
+        """Coordinate diffs should be ignored when local has street address."""
+        local = {
+            "location": {
+                "address": {
+                    "street": "Nervanderinkatu 8",
+                    "postal_code": "00100",
+                    "city": "Helsinki",
+                    "coordinates": [24.93033, 60.17235],
+                }
+            }
+        }
+        server = {
+            "location": {
+                "address": {
+                    "street": "Nervanderinkatu 8",
+                    "postal_code": "00100",
+                    "city": "Helsinki",
+                    "coordinates": [24.9384, 60.1699],  # Different (geocoded)
+                }
+            }
+        }
+
+        diffs = diff_activities(local, server)
+
+        # Should not report coordinate diff when street is present
+        assert not any(d.path == "location.address.coordinates" for d in diffs)
+
+    def test_ignores_coordinates_when_street_present_in_server(self):
+        """Coordinate diffs should be ignored when server has street address."""
+        local = {
+            "location": {
+                "address": {
+                    "postal_code": "00100",
+                    "coordinates": [24.93033, 60.17235],
+                }
+            }
+        }
+        server = {
+            "location": {
+                "address": {
+                    "street": "Nervanderinkatu 8",
+                    "postal_code": "00100",
+                    "coordinates": [24.9384, 60.1699],  # Geocoded
+                }
+            }
+        }
+
+        diffs = diff_activities(local, server)
+
+        # Should not report coordinate diff when server geocoded the address
+        assert not any(d.path == "location.address.coordinates" for d in diffs)
+
+    def test_reports_coordinates_when_street_is_null(self):
+        """Coordinate diffs should be reported when street is null (user dragged marker)."""
+        local = {
+            "location": {
+                "address": {
+                    "street": None,
+                    "postal_code": "00180",
+                    "city": "Helsinki",
+                    "coordinates": [24.883818, 60.174580],  # User dragged marker
+                }
+            }
+        }
+        server = {
+            "location": {
+                "address": {
+                    "street": None,
+                    "postal_code": "00180",
+                    "city": "Helsinki",
+                    "coordinates": [24.9384, 60.1699],  # Different
+                }
+            }
+        }
+
+        diffs = diff_activities(local, server)
+
+        # Should report coordinate diff when street is null (user-controlled)
+        coord_diffs = [d for d in diffs if d.path == "location.address.coordinates"]
+        assert len(coord_diffs) == 1
+
+    def test_reports_coordinates_when_no_street_field(self):
+        """Coordinate diffs should be reported when street field is absent."""
+        local = {
+            "location": {
+                "address": {
+                    "postal_code": "00180",
+                    "coordinates": [24.883818, 60.174580],
+                }
+            }
+        }
+        server = {
+            "location": {
+                "address": {
+                    "postal_code": "00180",
+                    "coordinates": [24.9384, 60.1699],
+                }
+            }
+        }
+
+        diffs = diff_activities(local, server)
+
+        # Should report coordinate diff when no street (user-controlled)
+        coord_diffs = [d for d in diffs if d.path == "location.address.coordinates"]
+        assert len(coord_diffs) == 1
+
+
+class TestServerGeneratedFields:
+    """Tests for ignoring server-generated fields."""
+
+    def test_ignores_coordinates_when_only_on_server(self):
+        """coordinates added by server should be ignored if not in local."""
+        local = {
+            "location": {
+                "address": {
+                    "street": "Test 1",
+                    "city": "Helsinki",
+                }
+            }
+        }
+        server = {
+            "location": {
+                "address": {
+                    "street": "Test 1",
+                    "city": "Helsinki",
+                    "coordinates": [24.9384, 60.1699],
+                }
+            }
+        }
+
+        diffs = diff_activities(local, server)
+
+        assert diffs == []
+
+    def test_ignores_zoom_when_only_on_server(self):
+        """zoom added by server should be ignored if not in local."""
+        local = {
+            "location": {
+                "address": {
+                    "postal_code": "00100",
+                }
+            }
+        }
+        server = {
+            "location": {
+                "address": {
+                    "postal_code": "00100",
+                    "zoom": 16,
+                }
+            }
+        }
+
+        diffs = diff_activities(local, server)
+
+        assert diffs == []
+
+    def test_reports_coordinates_when_both_have_them(self):
+        """If local has coordinates, differences should be reported."""
+        local = {
+            "location": {
+                "address": {
+                    "coordinates": [25.0, 60.0],
+                }
+            }
+        }
+        server = {
+            "location": {
+                "address": {
+                    "coordinates": [24.9384, 60.1699],
+                }
+            }
+        }
+
+        diffs = diff_activities(local, server)
+
+        assert len(diffs) == 1
+        assert diffs[0].path == "location.address.coordinates"
+
+    def test_ignores_server_coordinates_in_channels(self):
+        """Server-added coordinates in channels should be ignored."""
+        local = {
+            "channels": [
+                {
+                    "location": {
+                        "address": {"street": "Test 1"},
+                    }
+                }
+            ]
+        }
+        server = {
+            "channels": [
+                {
+                    "location": {
+                        "address": {
+                            "street": "Test 1",
+                            "coordinates": [24.9384, 60.1699],
+                            "zoom": 16,
+                        },
+                    }
+                }
+            ]
+        }
+
+        diffs = diff_activities(local, server)
+
+        assert diffs == []
+
+    def test_real_world_multi_channel_scenario(self):
+        """Real-world test: multiple channels with server-added fields."""
+        local = {
+            "channels": [
+                {
+                    "location": {
+                        "type": "phone",
+                        "address": {"street": None, "city": None},
+                    }
+                },
+                {
+                    "location": {
+                        "type": "place",
+                        "address": {"street": "Testikatu 1", "city": "Helsinki"},
+                    }
+                },
+            ]
+        }
+        server = {
+            "channels": [
+                {
+                    "location": {
+                        "type": "phone",
+                        "address": {
+                            "street": None,
+                            "city": None,
+                            "coordinates": [24.9, 60.1],
+                            "zoom": 16,
+                        },
+                    }
+                },
+                {
+                    "location": {
+                        "type": "place",
+                        "address": {
+                            "street": "Testikatu 1",
+                            "city": "Helsinki",
+                            "coordinates": [24.95, 60.17],
+                            "zoom": 16,
+                        },
+                    }
+                },
+            ]
+        }
+
+        diffs = diff_activities(local, server)
+
+        assert diffs == []

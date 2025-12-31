@@ -676,6 +676,75 @@ class TestUpdateActivity:
             update_activity(client, activity_id, payload)
 
 
+class TestApplyUpdate:
+    """Tests for apply_update() - syncing local changes to server."""
+
+    def test_apply_update_success(self, httpx_mock: HTTPXMock):
+        """Test successful application of local changes to server."""
+        from sync_activities import apply_update
+
+        activity_id = "128867852579"
+        server_activity = {
+            "_key": activity_id,
+            "traits": {
+                "translations": {"fi": {"name": "Old Title"}},
+                "channels": [{"id": "channel-uuid"}],
+            },
+        }
+        local = {
+            "_key": activity_id,
+            "title": {"fi": "New Title"},
+            "location": {"type": "place", "address": {"street": "Test 1"}},
+            "schedule": {"start_date": "2025-01-15", "end_date": "2025-06-15"},
+        }
+
+        httpx_mock.add_response(
+            url=f"https://hallinta.lahella.fi/v1/activities/{activity_id}",
+            method="PUT",
+            json={"_key": activity_id, "status": "draft"},
+        )
+
+        with httpx.Client() as client:
+            result = apply_update(client, local, server_activity, "group123")
+
+        assert result["_key"] == activity_id
+
+        request = httpx_mock.get_request()
+        assert request.method == "PUT"
+
+    def test_apply_update_preserves_channel_id(self, httpx_mock: HTTPXMock):
+        """Test that channel UUIDs are preserved when applying update."""
+        from sync_activities import apply_update
+
+        activity_id = "128867852579"
+        server_activity = {
+            "_key": activity_id,
+            "traits": {
+                "translations": {"fi": {"name": "Test"}},
+                "channels": [{"id": "original-channel-uuid"}],
+            },
+        }
+        local = {
+            "_key": activity_id,
+            "title": {"fi": "Test"},
+            "location": {"type": "place", "address": {"street": "New Street"}},
+            "schedule": {"start_date": "2025-01-15", "end_date": "2025-06-15"},
+        }
+
+        httpx_mock.add_response(
+            url=f"https://hallinta.lahella.fi/v1/activities/{activity_id}",
+            method="PUT",
+            json={"_key": activity_id},
+        )
+
+        with httpx.Client() as client:
+            apply_update(client, local, server_activity, "group123")
+
+        request = httpx_mock.get_request()
+        body = json.loads(request.content)
+        assert body["traits"]["channels"][0]["id"] == "original-channel-uuid"
+
+
 class TestUploadImage:
     """Tests for upload_image_for_course()."""
 

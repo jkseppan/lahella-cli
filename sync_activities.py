@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """
-Show diff between local YAML events and server state.
+Show diff between local YAML events and server state, and optionally apply changes.
 
 Usage:
-    uv run sync_activities.py                     # Show diff for all activities
-    uv run sync_activities.py --course 1          # Show diff for course #1
-    uv run sync_activities.py --title "Taiji"     # Show diff by title match
+    uv run sync_activities.py                           # Show usage
+    uv run sync_activities.py --course 1                # Show diff for course #1
+    uv run sync_activities.py --title "Taiji"           # Show diff by title match
+    uv run sync_activities.py --all                     # Show diff for all events
+    uv run sync_activities.py --course 1 --apply        # Show diff and apply changes
+    uv run sync_activities.py --all --apply             # Apply all changes (with confirmation)
 """
 
 import argparse
@@ -14,14 +17,18 @@ from pathlib import Path
 
 from ruamel.yaml import YAML
 
+import httpx
+
 from activity_diff import diff_activities, format_diffs
 from auth_helper import get_authenticated_session, load_auth_config
+from create_course import update_activity
 from download_activities import (
     fetch_all_activities,
     fetch_activity_by_id,
     convert_activity_to_yaml_schema,
 )
 from field_mapping import normalize_text
+from update_payload import build_update_payload
 
 
 EVENTS_FILE = Path(__file__).parent / "events.yaml"
@@ -93,6 +100,58 @@ def show_diff(local: dict, server_yaml: dict, title: str) -> bool:
     return True
 
 
+def apply_update(
+    session: httpx.Client,
+    local: dict,
+    server_activity: dict,
+    group_id: str,
+) -> dict:
+    """
+    Apply local changes to server.
+
+    Args:
+        session: Authenticated HTTP client
+        local: Local event dict from YAML
+        server_activity: Current server activity (raw API format)
+        group_id: Group ID for the payload
+
+    Returns:
+        API response from update
+    """
+    activity_id = local.get("_key") or server_activity.get("_key")
+    if not activity_id:
+        raise ValueError("No activity ID found in local or server data")
+
+    payload = build_update_payload(local, server_activity, group_id)
+    return update_activity(session, activity_id, payload)
+
+
+def prompt_and_apply(
+    session: httpx.Client,
+    local: dict,
+    server_activity: dict,
+    group_id: str,
+    title: str,
+) -> bool:
+    """
+    Prompt user for confirmation and apply update.
+
+    Returns True if update was applied, False if skipped.
+    """
+    response = input(f"\nApply changes to '{title}'? [y/N] ").strip().lower()
+    if response not in ("y", "yes"):
+        print("Skipped.")
+        return False
+
+    try:
+        result = apply_update(session, local, server_activity, group_id)
+        print(f"Updated successfully. (key: {result.get('_key')})")
+        return True
+    except Exception as e:
+        print(f"Error applying update: {e}")
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Show diff between local YAML and server state"
@@ -123,6 +182,11 @@ def main():
         action="store_true",
         help="Show diff for all events with _key",
     )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply changes to server after showing diff (with confirmation)",
+    )
     args = parser.parse_args()
 
     local_events = load_local_events(args.events_file)
@@ -152,7 +216,10 @@ def main():
         server_activity = fetch_activity_by_id(session, server_key)
         server_yaml = convert_activity_to_yaml_schema(server_activity)
 
-        show_diff(local, server_yaml, title)
+        has_changes = show_diff(local, server_yaml, title)
+
+        if has_changes and args.apply:
+            prompt_and_apply(session, local, server_activity, group_id, title)
 
     elif args.title:
         local = find_local_by_title(local_events, args.title)
@@ -181,7 +248,10 @@ def main():
         server_activity = fetch_activity_by_id(session, server_key)
         server_yaml = convert_activity_to_yaml_schema(server_activity)
 
-        show_diff(local, server_yaml, title)
+        has_changes = show_diff(local, server_yaml, title)
+
+        if has_changes and args.apply:
+            prompt_and_apply(session, local, server_activity, group_id, title)
 
     elif args.all:
         events_with_key = [e for e in local_events if e.get("_key")]
@@ -194,7 +264,7 @@ def main():
             file=sys.stderr
         )
 
-        changed = 0
+        changed_events: list[tuple[dict, dict, str]] = []
         unchanged = 0
 
         for local in events_with_key:
@@ -206,21 +276,30 @@ def main():
                 server_yaml = convert_activity_to_yaml_schema(server_activity)
 
                 if show_diff(local, server_yaml, title):
-                    changed += 1
+                    changed_events.append((local, server_activity, title))
                 else:
                     unchanged += 1
             except Exception as e:
                 print(f"\n{title}: Error fetching - {e}", file=sys.stderr)
 
-        print(f"\nSummary: {changed} changed, {unchanged} unchanged")
+        print(f"\nSummary: {len(changed_events)} changed, {unchanged} unchanged")
+
+        if changed_events and args.apply:
+            print(f"\nReady to apply {len(changed_events)} update(s).")
+            applied = 0
+            for local, server_activity, title in changed_events:
+                if prompt_and_apply(session, local, server_activity, group_id, title):
+                    applied += 1
+            print(f"\nApplied {applied}/{len(changed_events)} update(s).")
 
     else:
-        print("Usage: sync_activities.py [--course N | --title TEXT | --all]")
+        print("Usage: sync_activities.py [--course N | --title TEXT | --all] [--apply]")
         print("\nOptions:")
         print("  --course N    Compare course N from events.yaml")
         print("  --title TEXT  Find and compare course by title")
         print("  --all         Compare all events that have _key")
         print("  --id ID       Specify server activity ID manually")
+        print("  --apply       Apply changes to server (with confirmation)")
         sys.exit(1)
 
 
