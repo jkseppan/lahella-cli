@@ -19,28 +19,29 @@ For example, I volunteer with a [tai chi association](https://taichichuan.fi)
 and have found that it is great for developing my sense of balance, 
 and perhaps one day somewhere a healthcare worker is looking for a recommendation
 for exercises for a patient who has balance problems, and being legible in PTV
-would help us be findable at that moment.
+would help us get found at that moment.
 
 Look, it's more European than Google!
 Also, at Google's rate of enshittification even PTV may overtake
 it in usefulness before the heat death of the universe.
 
 In any case, implementing PTV is an [exercise in bureaucracy](https://kehittajille.suomi.fi/services/servicecatalogue/api-and-architecture-reform)
-so spectacularly byzantine that it has to be seen to be
+so spectacularly byzantine that it has to be
+[seen](https://kehittajille.suomi.fi/palvelut/palvelutietovaranto/mika-on-palvelutietovaranto/palvelutietovarannon-koulutukset/koulutusten-materiaalit-ja-tallenteet) to be
 [believed](https://kehittajille.suomi.fi/services/servicecatalogue/organising-work/duties-of-the-fsc-main-user).
-Thus [Lähellä.fi](https://www.lahella.fi/en-GB): a way for the small-time sports and hobby clubs to list their services.
+Thus [Lähellä.fi](https://www.lahella.fi/en-GB/frequently-asked-questions-for-ngos): a way for the small-time sports and hobby clubs to list their services.
 Lähellä.fi synchronises with PTV automatically and reduces the complexity to perhaps one tenth.
 
 Alas, even one deci-PTV of complexity is still way too clunky for us mere mortals.
-We have several tai chi classes and exercise groups, and keeping the listings
-up to date is a chore that you have to do through a next.js interface that is...
+We have several [tai chi classes and exercise groups](https://www.lahella.fi/en-GB/organisation/7103010551),
+and keeping the listings up to date is a chore that you have to do through a next.js interface that is...
 let's say "not bad for a government project".
 Thus this automation tool.
 
 ## Who is this for?
 
 You need to have a [lähellä.fi account](https://www.lahella.fi/forms/create-group) and some computing experience.
-I mean, you have to be able to deal with YAML files and appreciate why it's a better experience than clicky-clicky web forms.
+I mean, you have to be able to deal with YAML files and appreciate why it's better to suffer YAML than to suffer clicky-clicky web forms.
 
 It's probably worthwhile if you want to maintain at least five different activity entries
 (anything less and you're complicating your life for very little gains).
@@ -69,6 +70,7 @@ Please take backups of your lähellä.fi data before using this alpha software.
 3. **Install dependencies:**
    ```bash
    uv sync
+   uv run playwright install chromium
    ```
 
 ## Quick Start
