@@ -13,7 +13,7 @@ from filelock import FileLock
 from ruamel.yaml import YAML
 
 
-AUTH_FILE = Path(__file__).parent / "auth.yaml"
+AUTH_FILE = Path.cwd() / "auth.yaml"
 AUTH_LOCK_FILE = AUTH_FILE.with_suffix(".yaml.lock")
 BASE_URL = "https://hallinta.lahella.fi"
 
@@ -159,7 +159,7 @@ def get_authenticated_session(auto_refresh: bool = True) -> httpx.Client:
     return session
 
 
-if __name__ == "__main__":
+def main():
     print("Testing authentication...")
     session = get_authenticated_session()
 
@@ -171,3 +171,7 @@ if __name__ == "__main__":
     else:
         print("Authentication failed!")
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

@@ -91,7 +91,7 @@ auth:
 
 **Run the login script** to authenticate and save session tokens:
 ```bash
-uv run login.py
+uv run lahella-login
 ```
 
 This uses automated browser login (via Playwright) to obtain authentication tokens and saves them to `auth.yaml`.
@@ -105,7 +105,7 @@ You'll see what the fields mean and what they want you to do with them.
 ### 3. Download the activity
 
 ```bash
-uv run download_activities.py --yaml --output events.yaml
+uv run lahella-download --yaml --output events.yaml
 ```
 
 **Understanding the YAML format:**
@@ -123,7 +123,7 @@ Edit the YAML file and add another activity!
 Then try creating it remotely:
 
 ```bash
-uv run create_course.py
+uv run lahella-create
 ```
 
 The script will show a list of locally defined activities
@@ -132,7 +132,7 @@ and tell you how to pick the one to create.
 ### 5. Download again
 
 ```bash
-uv run download_activities.py --yaml --output downloaded_events.yaml
+uv run lahella-download --yaml --output downloaded_events.yaml
 ```
 
 Compare to your original file.
@@ -151,13 +151,13 @@ mv downloaded_events.yaml events.yaml
 Edit the activities, see how your local and remote versions differ:
 
 ```bash
-uv run sync_activities.py --all
+uv run lahella-sync --all
 ```
 
 and if you want to commit the changes to the remote:
 
 ```bash
-uv run sync_activities.py --all --apply
+uv run lahella-sync --all --apply
 ```
 
 
@@ -218,10 +218,10 @@ It should detect when to use the `<<: *` operator.
 The tool automatically refreshes authentication tokens when they expire. If you see "Unauthorized" errors:
 
 ```bash
-uv run auth_helper.py
+uv run lahella-auth
 ```
 
-This attempts to refresh your tokens. If refresh fails, run `uv run login.py` again to re-authenticate.
+This attempts to refresh your tokens. If refresh fails, run `uv run lahella-login` again to re-authenticate.
 
 
 ## Configuration Reference

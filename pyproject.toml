@@ -24,6 +24,13 @@ dependencies = [
 Homepage = "https://github.com/jkseppan/lahella-cli"
 Repository = "https://github.com/jkseppan/lahella-cli"
 
+[project.scripts]
+lahella-login = "lahella_cli.login:login"
+lahella-auth = "lahella_cli.auth_helper:main"
+lahella-download = "lahella_cli.download_activities:main"
+lahella-create = "lahella_cli.create_course:main"
+lahella-sync = "lahella_cli.sync_activities:main"
+
 [dependency-groups]
 dev = [
     "coverage>=7.13.1",
@@ -55,9 +62,6 @@ allowed-confusables = ["–"]
 [build-system]
 requires = ["uv_build>=0.9.21,<0.10.0"]
 build-backend = "uv_build"
-
-[tool.uv.build]
-exclude = ["*.lock"]
 
 [tool.ty.src]
 # Exclude test files - type errors there would just cause test failures anyway

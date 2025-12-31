@@ -14,7 +14,7 @@ from ruamel.yaml import YAML
 from playwright.sync_api import sync_playwright
 
 
-AUTH_FILE = Path(__file__).parent / "auth.yaml"
+AUTH_FILE = Path.cwd() / "auth.yaml"
 LOGIN_URL = "https://hallinta.lahella.fi/login"
 
 
