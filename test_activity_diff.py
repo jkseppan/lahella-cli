@@ -372,6 +372,47 @@ class TestEdgeCases:
         assert diffs[0].path == "location.address.zoom"
 
 
+class TestDefaultValues:
+    """Tests for default value handling in comparisons."""
+
+    def test_registration_required_default_true(self):
+        """Missing registration.required should default to True."""
+        local = {}
+        server = {"registration": {"required": True}}
+
+        diffs = diff_activities(local, server)
+
+        assert diffs == []
+
+    def test_registration_required_explicit_true(self):
+        """Explicit registration.required=True should match server."""
+        local = {"registration": {"required": True}}
+        server = {"registration": {"required": True}}
+
+        diffs = diff_activities(local, server)
+
+        assert diffs == []
+
+    def test_registration_required_false_differs_from_default(self):
+        """Explicit registration.required=False should differ from server True."""
+        local = {"registration": {"required": False}}
+        server = {"registration": {"required": True}}
+
+        diffs = diff_activities(local, server)
+
+        assert len(diffs) == 1
+        assert diffs[0].path == "registration.required"
+
+    def test_pricing_type_default_paid(self):
+        """Missing pricing.type should default to 'paid'."""
+        local = {}
+        server = {"pricing": {"type": "paid"}}
+
+        diffs = diff_activities(local, server)
+
+        assert diffs == []
+
+
 class TestImageHandling:
     """Tests for image.path/image.id special handling."""
 

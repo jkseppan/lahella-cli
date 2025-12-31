@@ -9,7 +9,13 @@ handling HTML content semantically and treating certain arrays as sets.
 from dataclasses import dataclass
 from typing import Any
 
-from field_mapping import html_texts_equal
+from field_mapping import (
+    html_texts_equal,
+    FIELD_MAPPINGS,
+    REGISTRATION_MAPPINGS,
+    LOCATION_MAPPINGS,
+    SCHEDULE_MAPPINGS,
+)
 
 
 @dataclass
@@ -50,6 +56,25 @@ SET_FIELDS = {
 }
 
 
+def _build_default_values() -> dict[str, Any]:
+    """
+    Build a mapping from YAML field paths to their default values.
+
+    Returns a dict like {"registration.required": True, "pricing.type": "paid", ...}
+    """
+    defaults = {}
+    all_mappings = (
+        FIELD_MAPPINGS + REGISTRATION_MAPPINGS + LOCATION_MAPPINGS + SCHEDULE_MAPPINGS
+    )
+    for mapping in all_mappings:
+        if mapping.default is not None:
+            defaults[mapping.yaml_path] = mapping.default
+    return defaults
+
+
+DEFAULT_VALUES = _build_default_values()
+
+
 def _compare_values(
     path: str, local_val: Any, server_val: Any
 ) -> bool:
@@ -57,7 +82,11 @@ def _compare_values(
     Compare two values at the given path.
 
     Returns True if values are equivalent, False if different.
+    Applies default values when local_val is None and a default exists.
     """
+    if local_val is None and path in DEFAULT_VALUES:
+        local_val = DEFAULT_VALUES[path]
+
     if local_val == server_val:
         return True
 

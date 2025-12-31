@@ -35,11 +35,11 @@
         }
       }
     },
-    "courses": {
+    "events": {
       "type": "array",
-      "description": "List of course definitions",
+      "description": "List of events",
       "items": {
-        "$ref": "#/$defs/course"
+        "$ref": "#/$defs/event"
       }
     }
   },
@@ -870,7 +870,7 @@
       ],
       "description": "Region: state/FI/Name or city/FI/Name. Leave regions array empty for national activities."
     },
-    "courseDefaults": {
+    "eventDefaults": {
       "type": "object",
       "properties": {
         "type": {
@@ -942,7 +942,7 @@
         }
       }
     },
-    "course": {
+    "event": {
       "type": "object",
       "required": [
         "title"
@@ -1043,7 +1043,7 @@
           "items": {
             "$ref": "#/$defs/channel"
           },
-          "description": "Multiple locations/times for one course"
+          "description": "Multiple locations/times for one event"
         },
         "pricing": {
           "$ref": "#/$defs/pricing"

@@ -491,6 +491,7 @@ def main():
         defaults, processed_events = apply_template_matching(events, matcher)
 
         result = CommentedMap()
+        result["$schema"] = "./schema.json"
         result["defaults"] = defaults
         result[matcher.events_key] = processed_events
 
