@@ -25,6 +25,7 @@ from create_course import (
     load_courses,
     get_course_by_title,
     create_activity,
+    update_activity,
     upload_image_for_course,
 )
 from update_payload import build_payload
@@ -622,6 +623,57 @@ class TestCreateActivity:
 
         with httpx.Client() as client, pytest.raises(httpx.HTTPStatusError):
             create_activity(client, payload)
+
+
+class TestUpdateActivity:
+    """Tests for update_activity()."""
+
+    def test_successful_update(self, httpx_mock: HTTPXMock):
+        """Test successful activity update."""
+        activity_id = "128867852579"
+        mock_response = {"_key": activity_id, "status": "draft"}
+        httpx_mock.add_response(
+            url=f"https://hallinta.lahella.fi/v1/activities/{activity_id}",
+            method="PUT",
+            json=mock_response,
+        )
+
+        payload = {"group": "test", "traits": {"type": "hobby"}}
+
+        with httpx.Client() as client:
+            result = update_activity(client, activity_id, payload)
+
+        assert result["_key"] == activity_id
+
+    def test_update_error(self, httpx_mock: HTTPXMock):
+        """Test handling of update error."""
+        activity_id = "128867852579"
+        httpx_mock.add_response(
+            url=f"https://hallinta.lahella.fi/v1/activities/{activity_id}",
+            method="PUT",
+            status_code=400,
+            json={"error": "Invalid payload"},
+        )
+
+        payload = {"group": "test", "traits": {}}
+
+        with httpx.Client() as client, pytest.raises(httpx.HTTPStatusError):
+            update_activity(client, activity_id, payload)
+
+    def test_update_not_found(self, httpx_mock: HTTPXMock):
+        """Test handling of activity not found."""
+        activity_id = "nonexistent"
+        httpx_mock.add_response(
+            url=f"https://hallinta.lahella.fi/v1/activities/{activity_id}",
+            method="PUT",
+            status_code=404,
+            json={"error": "Not found"},
+        )
+
+        payload = {"group": "test", "traits": {"type": "hobby"}}
+
+        with httpx.Client() as client, pytest.raises(httpx.HTTPStatusError):
+            update_activity(client, activity_id, payload)
 
 
 class TestUploadImage:

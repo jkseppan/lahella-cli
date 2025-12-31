@@ -108,6 +108,21 @@ def create_activity(session: httpx.Client, payload: dict) -> dict:
     return response.json()
 
 
+def update_activity(session: httpx.Client, activity_id: str, payload: dict) -> dict:
+    """Update an existing activity via API."""
+    url = f"{BASE_URL}/v1/activities/{activity_id}"
+    headers = {"Content-Type": "application/json"}
+
+    response = session.put(url, json=payload, headers=headers)
+
+    if response.status_code != 200:
+        print(f"Error updating activity: {response.status_code}")
+        print(response.text)
+        response.raise_for_status()
+
+    return response.json()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Create a course listing on lahella.fi"
